@@ -14,8 +14,8 @@ import os.path
 configPath = "config.yml"
 
 def getConfig():
-    if !os.path.isfile(configPath):
-        print("%s does not exist. Copy example.config.yml to this path and edit with your configuration" % (configPath))
+    if not os.path.isfile(configPath):
+        print("%s does not exist. Copy example.config.yml to this path and edit with your configuration.\n\n    E.x. cp example.config.yml %s\n" % (configPath, configPath))
         return False
     with open(configPath) as f:
         return yaml.load(f, Loader=yaml.FullLoader)

@@ -14,6 +14,7 @@
 import os
 import time
 import json
+import sys
 from helpers import isCommand, sh, grab, getConfig 
 
 config = getConfig()
@@ -21,7 +22,7 @@ config = getConfig()
 def getSnapshot():
     """Get LND to describe the network graph"""
     data = {}
-    data["timestamp"] = int(time.time)
+    data["timestamp"] = int(time.time())
     data["graph"] = json.loads(grab("lncli describegraph"))
     return data
 
@@ -37,9 +38,10 @@ def main():
     if config is False:
         print("Config file error. Exiting.")
         return 
-    if !isCommand("lncli"):
+    if not isCommand("lncli"):
         print("LND is not installed. Exiting.")
         return
+    print("Getting snapshot... please wait...")
     snapshot = json.dumps(getSnapshot())
     if "--remote-write" in sys.argv:
         remoteWrite(snapshot)
