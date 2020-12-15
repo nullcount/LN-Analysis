@@ -1,0 +1,4 @@
+localfile: graph.json
+tempfile: .graph.temp
+remote_host: user@example.com
+remote_file: /some/path/on/remote/host
