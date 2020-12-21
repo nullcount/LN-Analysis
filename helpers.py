@@ -11,7 +11,7 @@ import subprocess
 import yaml
 import os.path
 
-configPath = "config.yml"
+configPath = "./config.yml"
 
 def getConfig():
     if not os.path.isfile(configPath):
