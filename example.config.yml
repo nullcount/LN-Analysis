@@ -1,4 +1,11 @@
 localfile: graph.json
 tempfile: .graph.temp
+
+# pickle_jar - a folder of timestamped graph pickles
+# Make sure to .gitignore it
+pickle_jar: jar
+
+# everything below this is only used by snapshot.py
+# you dont need to change it unless using the --remote-write flag
 remote_host: user@example.com
 remote_file: /some/path/on/remote/host

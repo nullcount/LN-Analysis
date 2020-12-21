@@ -33,9 +33,14 @@ To upload a snapshot to another host
 
 Use with [cron](https://www.howtogeek.com/101288/how-to-schedule-tasks-on-linux-an-introduction-to-crontab-files/) to get up-to-date snapshots.
 
-NOTE: Each subsequent snapshot will be overwritten. 
-TODO: Implement a method for collecting historical data. 
+NOTE: Each subsequent snapshot will be overwritten.
+TODO: Implement a method for collecting historical data.
 
-### Make Graph [TODO]
+### Make Graph
 
-With `graph.json` in the project root, run `graphize.py` to greate a [NetworkX](https://networkx.org/) graph from the snapshot. The result is an object is a new [pickle](https://wiki.python.org/moin/UsingPickle) that can be deserialized in other scripts to reconstruct the graph.
+Run `graphize.py /path/to/graph.json` to greate a [NetworkX](https://networkx.org/) graph from the snapshot. This will add a new [pickle](https://wiki.python.org/moin/UsingPickle) to your `jar` directory.
+
+### Do Some Analysis!
+
+In `example_script.py` we show how to load in a pickle for analysis.
+The `picklePicker` function will render a menu of saved pickles and allow the user to select which graph to use for this script.
