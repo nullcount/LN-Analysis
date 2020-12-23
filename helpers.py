@@ -16,7 +16,7 @@ import pickle
 from datetime import datetime
 import networkx as nx
 
-configPath = "./config.yml"
+configPath = "/home/admin/LN-Analysis/config.yml"
 
 def getConfig():
     if not os.path.isfile(configPath):
@@ -68,29 +68,24 @@ def getGraph(graphJson):
 
     return G
 
-def pickleIt(g, f):
-    pickle.dump(g, open(f, "wb"))
-
-def depickle(f):
-    return pickle.load(open(f, "rb"))
-
 def mkdir(d):
     """Makes a directory if it does not exist"""
     if not os.path.exists(d):
         os.makedirs(d)
 
-def picklePicker(jarPath):
-    pickles = glob.glob("%s/*.p" % (jarPath))
-    if len(pickles) == 0:
-        print("No pickled graphs found. Run graphize.py or check your pickle jar. Exiting.")
+def graphSelector():
+    config = getConfig()
+    graphs = glob.glob("%s/*" % (config['json_archive']))
+    if len(graphs) == 0:
+        print("No graphs found in %s. Run snapshot.py on your lightning node or grab a snapshot from somewhere else. Exiting." % config['json_archive'])
         return
-    if len(pickles) == 1:
-        return depickle(pickles[0])
+    if len(graphs) == 1:
+        return getGraph(getDict(graphs[0]))
     else:
-        print("Showing all saved pickles:\n")
-        for i, pickle in enumerate(pickles):
-            file = pickle.split("/")[-1]
-            date = datetime.utcfromtimestamp(int(file.split('.')[0])).strftime('%Y-%m-%d %H:%M:%S')
+        print("Showing all archived graph json:\n")
+        for i, graph in enumerate(graphs):
+            file = graph.split("/")[-1]
+            date = datetime.utcfromtimestamp(int(file.split('-')[0])).strftime('%Y-%m-%d %H:%M:%S')
             print("%s - %s from %s" % (i, file, date))
-        choice = input("\nPlease select a pickle. Enter a number 0-%s: " % (len(pickles)-1))
-        return depickle(pickles[int(choice)])
+        choice = input("\nPlease select a snapshot. Enter a number 0-%s: " % (len(graphs)-1))
+        return getGraph(getDict(graphs[int(choice)]))

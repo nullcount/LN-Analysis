@@ -1,9 +1,7 @@
-from helpers import getConfig, picklePicker
-
-config = getConfig()
+from helpers import graphSelector
 
 def main():
-    G = picklePicker(config['pickle_jar'])
+    G = graphSelector()
     print(list(G.nodes))
 
 if __name__ == '__main__':

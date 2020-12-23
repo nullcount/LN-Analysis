@@ -1,9 +1,13 @@
 localfile: graph.json
 tempfile: .graph.temp
 
-# pickle_jar - a folder of timestamped graph pickles
+# lncli_path: output of `which lncli`
+lncli_path: /usr/local/bin/lncli
+
+
+# json_archive - a folder of timestamped graph json snapshots
 # Make sure to .gitignore it
-pickle_jar: jar
+json_archive: archive
 
 # everything below this is only used by snapshot.py
 # you dont need to change it unless using the --remote-write flag
