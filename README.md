@@ -31,16 +31,11 @@ To create a snapshot locally (on the node)
 To upload a snapshot to another host
 `python3 snapshot.py --remote-write`
 
-Use with [cron](https://www.howtogeek.com/101288/how-to-schedule-tasks-on-linux-an-introduction-to-crontab-files/) to get up-to-date snapshots.
+To archive that snapshot in your `archive` folder
+`python3 snapshot.py --archive`
 
-NOTE: Each subsequent snapshot will be overwritten.
-TODO: Implement a method for collecting historical data.
-
-### Make Graph
-
-Run `graphize.py /path/to/graph.json` to greate a [NetworkX](https://networkx.org/) graph from the snapshot. This will add a new [pickle](https://wiki.python.org/moin/UsingPickle) to your `jar` directory.
+Use with [cron](https://www.howtogeek.com/101288/how-to-schedule-tasks-on-linux-an-introduction-to-crontab-files/) to get regular snapshots.
 
 ### Do Some Analysis!
 
-In `example_script.py` we show how to load in a pickle for analysis.
-The `picklePicker` function will render a menu of saved pickles and allow the user to select which graph to use for this script.
+In `example_script.py` we show how to load in a snapshot for analysis.
