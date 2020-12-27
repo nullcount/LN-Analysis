@@ -16,7 +16,7 @@ import pickle
 from datetime import datetime
 import networkx as nx
 
-configPath = "/home/admin/LN-Analysis/config.yml"
+configPath = "./config.yml"
 
 def getConfig():
     if not os.path.isfile(configPath):
@@ -45,6 +45,8 @@ def getGraph(graphJson):
 
     # Parse and add nodes
     for node in graphJson['graph']['nodes']:
+        if node['last_update'] == 0:
+            continue
         G.add_node(
             node['pub_key'],
             alias=node['alias'],
@@ -55,6 +57,12 @@ def getGraph(graphJson):
 
     # Parse and add edges
     for edge in graphJson['graph']['edges']:
+        if edge['last_update'] == 0:
+            continue
+        if edge['node1_policy'] is None or edge['node2_policy'] is None:
+            continue
+        if edge['node1_policy']['disabled'] is None or edge['node2_policy']['disabled'] is None:
+            continue
         G.add_edge(
             edge['node1_pub'],
             edge['node2_pub'],
@@ -65,7 +73,19 @@ def getGraph(graphJson):
             node1_policy=edge['node1_policy'],
             node2_policy=edge['node2_policy']
         )
+    G.remove_nodes_from([x for x in G.nodes() if G.degree[x] == 0 ])
 
+    return G
+
+def remove_subs(G):
+    """
+    Removes all subgraphs besides the largets one.
+    """
+    components = list(nx.connected_components(G))
+    mainnet = max(components,key=len)
+    components.remove(mainnet)
+    for component in components:
+        G.remove_nodes_from(component)
     return G
 
 def mkdir(d):
