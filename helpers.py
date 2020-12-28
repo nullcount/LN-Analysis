@@ -66,6 +66,7 @@ def getGraph(graphJson):
         G.add_edge(
             edge['node1_pub'],
             edge['node2_pub'],
+            weight = 1,
             channel_id=edge['channel_id'],
             chan_point=edge['chan_point'],
             last_update=edge['last_update'],
