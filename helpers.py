@@ -164,8 +164,8 @@ def get_merchants():
             soup = bs(response.content, "html.parser")
             pub_keys.extend(soup.find_all("strong", {"class": "small selectable"}))
 
-        pub_keys = list(set([pub_key.text + "\n" for pub_key in pub_keys]))
+        pub_keys = list(set([pub_key.text for pub_key in pub_keys]))
 
         with open("merchants.txt", "w") as fileobj:
-            fileobj.writelines(pub_keys)
+            fileobj.writelines([pub_key+"\n" for pub_key in pub_keys])
     return pub_keys
