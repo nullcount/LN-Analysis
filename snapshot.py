@@ -41,7 +41,7 @@ def localWrite(string):
     open(localFile, "w").write(string)
     if "--archive" in sys.argv:
         mkdir(config['json_archive'])
-        sh("cp %s %s/" % (localFile, config['json_archive']))
+        sh("mv %s %s/" % (localFile, config['json_archive']))
 
 def main():
     if config is False:
