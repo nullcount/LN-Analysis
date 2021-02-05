@@ -42,15 +42,57 @@ Here's how to use it:
 
 
 **Dynamically Rebalance Channels**
-* Rebalancing channels is essentially undoing transactions en masse. 
+* Principle: Rebalancing channels is essentially undoing transactions en masse. 
 
-Channels are defined as a directed edge with inflow and outflow. As one increases, the other decreases.
+Channels are defined as an edge with inflow and outflow. As one increases, the other decreases.
 The sum of inflow and outflow (capacity) is constant. 
 Transactions change the inflow/outflow of two channels identically. 
 Channels can be balanced in pairs. Balancing a pair of channels is associated with a cost.
-The goal is to minimize the cost to rebalance all channels, by picking a set of pairs to rebalance. 
-Conjecture: This is easier if there is an even number of pairs.
-This can be done with a depth first search. 
+Minimize the cost to rebalance all channels, by picking a set of pairs to rebalance. 
 
-Channel balance can be reduced to one number, positive or negative depending on which side the greater balance is on 
-Find pairs of imbalances whose sum of sums is minimal (assuming all rebalances cost the same)
+Conjecture: This task is easier if there is an even number of pairs.
+
+Assumptions: 
+* The capacity of every channel is the same. 
+* The cost to rebalance any pair of channels is the same.
+
+Then, channel balance can be reduced to one number, positive or negative depending on which side the greater balance is on.
+
+Separate positive and negative balances into two different groups. 
+The goal is to find pairs of imbalances between these groups that lead to all channels being balanced within 10%.
+
+ex:
+* pos: [1,2,3]
+* neg: [-1,-2,-3]
+* pairs to rebalance: (-1,1),(-2,2),(-3,3)
+
+Conjecture: There always exists at least one mapping to perfectly rebalance all of the channels.
+
+If every value in each group is unique and the size of the groups are the same, there is exactly one way to perfectly rebalance all of the channels. 
+Note: Perfect rebalances are cool, but within a 10% threshold, there may be a cheaper way to rebalance.
+
+ex:
+pos: [1,2,2,3]
+neg: [-4,-4]
+
+pairs to rebalance: 
+(-4,1),
+
+
+This example shows that the process of finding pairs has to be iterative. 
+
+
+Algorithm:
+
+```
+sort the positive list in ascending order and the negative list in descending order
+while the lists are not empty:
+    pair symmetric imbalances and remove those items from the list. 
+    pop the first element from each list, add them together, 
+    If the sum is positive, append the sum to the positive list, maintaining order
+    If the sum is negative, append the sum to the negative list, maintaining order
+```
+[Think of it like an order book for a stock :P](https://en.m.wikipedia.org/wiki/File:Order_book_depth_chart.gif)
+
+(imbalances map to nodes, modify this algo to produce pairs of nodes) 
+
