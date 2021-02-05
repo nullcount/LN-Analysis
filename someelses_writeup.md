@@ -72,12 +72,10 @@ If every value in each group is unique and the size of the groups are the same, 
 Note: Perfect rebalances are cool, but within a 10% threshold, there may be a cheaper way to rebalance.
 
 ex:
-pos: [1,2,2,3]
-neg: [-4,-4]
-
-pairs to rebalance: 
-(-4,1),
-
+* pos: [1,2,2,3]
+* neg: [-4,-4]
+* pairs to rebalance: 
+(-4,1),(-4,2),(-4,-2),(-4,3)
 
 This example shows that the process of finding pairs has to be iterative. 
 
