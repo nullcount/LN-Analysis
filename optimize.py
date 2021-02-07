@@ -59,10 +59,19 @@ from lnsimulator.ln_utils import preprocess_json_file
 from helpers import get_merchants
 import pandas as pd
 import lnsimulator.simulator.transaction_simulator as ts
+from scipy import stats
+import numpy as np
 
 data_dir = join(getcwd(), "graphs")
 graph_loc = join(data_dir, "1608749883.json")  # add: tmp_json = tmp_json["graph"] after line 11 in ln_utils
+#add potential nodes before preprocessing? definitely not!!
 directed_edges = preprocess_json_file(graph_loc)
+
+# used to get an idea of the template for creating psuedochannels, can be commented out
+# for col in directed_edges.select_dtypes([np.float64]):
+#     directed_edges = directed_edges[(np.abs(stats.zscore(directed_edges[col])) < 3)] # remove outliers
+#     print(directed_edges[col].describe()) # describe column using 5 number summary
+#directed edges have: snapshot_id, src, trg, last_update,channel_id,capacity,disabled,fee_base_msat,fee_rate_milli_msat,min_htlc
 
 providers = get_merchants()
 
@@ -77,3 +86,25 @@ simulator = ts.TransactionSimulator(directed_edges, providers, amount, count, dr
                                     drop_low_cap=drop_low_cap, epsilon=epsilon, with_depletion=with_depletion)
 
 cheapest_paths, _, all_router_fees, _ = simulator.simulate(weight="total_fee", with_node_removals=False)
+
+# NOTE: use rich club coefficient to find group of well connected nodes.
+
+"""
+template info
+more detailed info can be found in the file titled '5_number_summary.txt'
+
+Mean Capacity ~ 3,000,000
+50% of values fall between 176,623 and 3,000,000
+
+Mean Base Fee ~ 1320
+50% of values fall between 1 and 1,000
+Most frequent is 1,000
+
+Mean Fee Rate ~ 216
+50% of values fall between 1 and 10
+Most frequent is 1
+
+Name: min_htlc, dtype: float64
+Mean Min HTLC ~ 848
+>50% of values are 1000
+"""
