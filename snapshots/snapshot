@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+
+print_usage () {
+  cat << EOF
+NAME
+    snapshot - create snapshots of the lightning network
+
+SYNOPSIS
+    snapshot [OPTION]... [SNAPSHOT]
+
+DESCRIPTION
+    Create and save descriptions of the lightning network graph.
+    Use diffs to maintain a repository of graph changes.
+    Resolve diffs to restore previous snapshots.
+    List saved snapshots.
+
+    -s
+        create a regular timestamped lncli snapshot
+
+    -d
+        creates a new diff using a new snapshot and the last created snapshot
+
+    -l
+        list snapshots avilable to restore
+
+    -r SNAPSHOT
+        recreate a snapshot from diffs. SNAPSHOT must be a string returned from --list
+EOF
+}
+
+pretty_time () {
+  date -d @$1 +"%Y-%m-%d_%H:%M:%S"
+}
+
+list_diffs () {
+  ls diffs
+}
+
+apply_diff () {
+  patch $1 $2
+}
+
+# Files
+TIMESTAMP=$(date +'%s')
+PRETTY_TIME=$(pretty_time $TIMESTAMP)
+PWD=$(pwd)
+NEW_SNAPSHOT=$PWD/$PRETTY_TIME-graph.json
+NEW_DIFF=$PWD/diffs/$PRETTY_TIME.p
+GENESIS=$PWD/archive/genesis
+LATEST=$PWD/archive/latest
+
+# Flags
+s_flag=false
+d_flag=false
+
+restore_snapshot () {
+  SNAP="${1%%.*}"-graph.json
+  echo "Restoring... $1 as $SNAP"
+  cp $GENESIS $SNAP
+  for patch in diffs/*
+  do
+    apply_diff $SNAP $patch
+    if [ $1 = $patch ] ; then
+      exit 0
+    fi
+  done
+}
+
+while getopts 'dslr:' flag; do
+  case "${flag}" in
+    s) s_flag=true ;;
+    d) d_flag=true ;;
+    l) list_diffs ;;
+    r) restore_snapshot "${OPTARG}" ;;
+    *) print_usage
+       exit 1 ;;
+  esac
+done
+
+do_snapshot () {
+  # lncli describegraph > $1
+  cp $PWD/shelf/1611947291-graph.json $1
+}
+
+get_diff () {
+  diff -u $1 $2 > $3
+}
+
+pretty_json () {
+  cat $1 | jq -sMS 'map(.graph.edges |= sort_by(.graph.edges.channel_id))[]' > $1.tmp
+  sed -i '/"last_update"/d' $1.tmp
+  mv $1.tmp $1
+}
+
+minify_json () {
+  jq -c . < $1 > $2
+}
+
+new_diff () {
+  if [ -f "$LATEST" ]; then
+    get_diff $LATEST $NEW_SNAPSHOT $NEW_DIFF
+  else
+    get_diff $GENESIS $NEW_SNAPSHOT $NEW_DIFF
+  fi
+  if [ "$s_flag" = false ] ; then
+    mv $NEW_SNAPSHOT $LATEST
+  else
+    cp $NEW_SNAPSHOT $LATEST
+  fi 
+}
+
+new_snapshot () {
+  do_snapshot $NEW_SNAPSHOT
+  pretty_json $NEW_SNAPSHOT
+  if [ ! -f "$GENESIS" ]; then
+    cp $NEW_SNAPSHOT $GENESIS
+  fi
+  if [ "$d_flag" = true ] ; then
+    new_diff
+  fi
+}
+
+if [ "$s_flag" = true ] || [ "$d_flag" = true ] ; then
+    new_snapshot
+fi
+
