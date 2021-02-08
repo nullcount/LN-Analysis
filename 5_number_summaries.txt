@@ -1,5 +1,8 @@
 
-
+# code used to get an idea of the template for creating psuedochannels
+# for col in directed_edges.select_dtypes([np.float64]): # bug this also removes the capacity column
+#     directed_edges = directed_edges[(np.abs(stats.zscore(directed_edges[col])) < 3)] # remove outliers
+#     print(directed_edges[col].describe()) # describe column using 5 number summary
 
 count    6.074600e+04
 mean     3.417289e+06
