@@ -57,22 +57,14 @@ from os.path import join
 from os import getcwd
 from lnsimulator.ln_utils import preprocess_json_file
 from helpers import get_merchants
-import pandas as pd
 import lnsimulator.simulator.transaction_simulator as ts
-from scipy import stats
-import numpy as np
+from random import randint, choices
+from string import ascii_lowercase, digits
 
-data_dir = join(getcwd(), "graphs")
-graph_loc = join(data_dir, "1608749883.json")  # add: tmp_json = tmp_json["graph"] after line 11 in ln_utils
-#add potential nodes before preprocessing? definitely not!!
+
+data_dir = join(getcwd(), "cleaned_graphs")
+graph_loc = join(data_dir, "1611045003.json")  # add: tmp_json = tmp_json["graph"] after line 11 in ln_utils
 directed_edges = preprocess_json_file(graph_loc)
-
-# used to get an idea of the template for creating psuedochannels, can be commented out
-# for col in directed_edges.select_dtypes([np.float64]):
-#     directed_edges = directed_edges[(np.abs(stats.zscore(directed_edges[col])) < 3)] # remove outliers
-#     print(directed_edges[col].describe()) # describe column using 5 number summary
-#directed edges have: snapshot_id, src, trg, last_update,channel_id,capacity,disabled,fee_base_msat,fee_rate_milli_msat,min_htlc
-
 providers = get_merchants()
 
 amount = 60000
@@ -86,12 +78,54 @@ simulator = ts.TransactionSimulator(directed_edges, providers, amount, count, dr
                                     drop_low_cap=drop_low_cap, epsilon=epsilon, with_depletion=with_depletion)
 
 cheapest_paths, _, all_router_fees, _ = simulator.simulate(weight="total_fee", with_node_removals=False)
+output_dir = "test"
+total_income, total_fee = simulator.export(output_dir)
 
-# NOTE: use rich club coefficient to find group of well connected nodes.
+
+# NOTE: use rich club coefficient to find groups of well connected nodes.
+
+
+def generate_node_id():
+    length = 66
+    id = ''.join(choices(ascii_lowercase + digits, k=length))
+    return id
+
+
+def generate_channel(src, trg):
+    # 1 in 271388828513075199 chance of generating non unique id
+    # a should be whatever is 1+ max channel id in most current graph
+    channel_dict = {
+        "snapshot_id": 0,
+        "src": src,
+        "trg": trg,
+        "last_update": 1612660305,
+        "channel_id": randint(728611171486924801, 999999999999999999),
+        "capacity": 800000,
+        "disabled": 0,
+        "fee_base_msat": 1000,
+        "fee_rate_milli_msat": 1,
+        "min_htlc": 1000
+    }
+    return channel_dict
+
 
 """
 template info
 more detailed info can be found in the file titled '5_number_summary.txt'
+
+snapshot_id, src, trg, last_update, channel_id, capacity, disabled, fee_base_msat, fee_rate_milli_msat, min_htlc
+
+snapshot_id:0,
+src:our node id (random string 66 characters),
+trg:node id of node we share a channel with,
+last_update: some timestamp,
+channel_id: unique 18 digit number x | 728611171486924800 < x < 999999999999999999
+capacity: 800000
+disabled: 0,
+fee_base_msat: 1000
+fee_rate_milli_msat: 1
+min_htlc: 1000
+
 
 Mean Capacity ~ 3,000,000
 50% of values fall between 176,623 and 3,000,000
@@ -107,4 +141,37 @@ Most frequent is 1
 Name: min_htlc, dtype: float64
 Mean Min HTLC ~ 848
 >50% of values are 1000
+"""
+
+"""
+Search space:
+4 Channels from the union (intersection?) of:
+    - nodes belonging to longest shortest paths
+    - nodes with high betweeness centrality
+    - nodes that have 'low fee routing diversity' 
+"""
+
+
+def get_leaves(graph):
+    # takes NetworkX Graph as input
+    # finds shortest paths between random nodes in the graph
+    # gets node with highest betweeness centrality
+    # creates a BFS from that node
+    # returns the leaves of that tree
+    pass
+
+
+def create_search_space():
+    # first create a set containing nodes belonging to the longest shortest paths
+    pass
+
+
+"""
+Objective function:
+Considers:
+    - % change in successful payments routed
+    - number of -1 cheapest paths, similar to above (minimize)
+    - total income (maximize) 
+    - number of transactions processed
+    - cost to rebalance entire capacity (minimize)
 """
