@@ -19,6 +19,9 @@ import networkx as nx
 from bs4 import BeautifulSoup as bs
 import requests
 from many_requests import ManyRequests
+from pathlib import Path
+from copy import deepcopy
+
 
 configPath = "./config.yml"
 
@@ -53,18 +56,18 @@ def getDict(f):
 
 def getGraph(graphJson):
     # Create an empty graph
-    G = nx.Graph()
+    G = nx.Graph(name=graphJson["timestamp"])
 
     # Parse and add nodes
     for node in graphJson['graph']['nodes']:
-        if node['last_update'] == 0:
+        if node.get('last_update',0) == 0:
             continue
         G.add_node(
             node['pub_key'],
             alias=node['alias'],
             addresses=node['addresses'],
             color=node['color'],
-            last_update=['last_update']
+            last_update=node['last_update']
         )
 
     # Parse and add edges
@@ -78,7 +81,7 @@ def getGraph(graphJson):
         G.add_edge(
             edge['node1_pub'],
             edge['node2_pub'],
-            weight=1,
+            # weight=1,
             channel_id=edge['channel_id'],
             chan_point=edge['chan_point'],
             last_update=edge['last_update'],
@@ -101,6 +104,35 @@ def remove_subs(G):
     for component in components:
         G.remove_nodes_from(component)
     return G
+
+def clean_graph(graph,save = True):
+    # take NetworkX Graph as input
+    articulation_points = list(nx.articulation_points(graph))
+    # remove articulation points, then remove components, then add back in articulation points
+    graph_copy = deepcopy(graph)  # because adding back the articulation points does not add back the edges
+    graph_copy.remove_nodes_from(articulation_points)
+    components = list(nx.connected_components(graph_copy))
+    mainnet = max(components, key=len)
+    kept_nodes = mainnet|set(articulation_points)
+    removed_nodes = set(graph.nodes())-kept_nodes
+    graph.remove_nodes_from(removed_nodes)
+
+    # save graph in cleaned_graphs dir
+    if save:
+        save_graph(graph)
+    return graph
+
+
+def save_graph(graph):
+    graph_data = nx.readwrite.node_link_data(graph, {"name": "pub_key",
+                                                     "link": "edges",
+                                                     "source": "node1_pub",
+                                                     "target": "node2_pub"})
+    graph_data = {"graph": graph_data, "timestamp": graph.name}
+    Path("cleaned_graphs").mkdir(exist_ok=True)
+    with open(join("cleaned_graphs", str(graph.name)+'.json'), 'w') as outfile:
+        json.dump(graph_data, outfile)
+    # TODO: remove extraneous fields before saving
 
 
 def mkdir(d):
