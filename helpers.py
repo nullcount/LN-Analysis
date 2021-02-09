@@ -105,6 +105,7 @@ def remove_subs(G):
         G.remove_nodes_from(component)
     return G
 
+
 def clean_graph(graph,save = True):
     # take NetworkX Graph as input
     articulation_points = list(nx.articulation_points(graph))
@@ -116,29 +117,31 @@ def clean_graph(graph,save = True):
     kept_nodes = mainnet|set(articulation_points)
     removed_nodes = set(graph.nodes())-kept_nodes
     graph.remove_nodes_from(removed_nodes)
+    graph = remove_subs(graph)
+
 
     # save graph in cleaned_graphs dir
     if save:
-        save_graph(graph)
+        config = getConfig()
+        save_graph(graph, loc=config["clean_dir"])
     return graph
 
 
-def save_graph(graph):
+def save_graph(graph,loc):
     graph_data = nx.readwrite.node_link_data(graph, {"name": "pub_key",
                                                      "link": "edges",
                                                      "source": "node1_pub",
                                                      "target": "node2_pub"})
     graph_data = {"graph": graph_data, "timestamp": graph.name}
-    Path("cleaned_graphs").mkdir(exist_ok=True)
-    with open(join("cleaned_graphs", str(graph.name)+'.json'), 'w') as outfile:
+    mkdir(loc)
+    with open(join(loc, str(graph.name)+'-graph.json'), 'w') as outfile:
         json.dump(graph_data, outfile)
     # TODO: remove extraneous fields before saving
 
 
 def mkdir(d):
     """Makes a directory if it does not exist"""
-    if not os.path.exists(d):
-        os.makedirs(d)
+    Path(d).mkdir(exist_ok=True)
 
 
 def graphSelector():
@@ -154,7 +157,7 @@ def graphSelector():
     else:
         print("Showing all archived graph json:\n")
         for i, graph in enumerate(graphs):
-            file = graph.split("/")[-1]
+            file = graph.split("/")[-1].lstrip("//graphs\\")
             date = datetime.utcfromtimestamp(int(file.split('-')[0])).strftime('%Y-%m-%d %H:%M:%S')
             print("%s - %s from %s" % (i, file, date))
         choice = input("\nPlease select a snapshot. Enter a number 0-%s: " % (len(graphs) - 1))
