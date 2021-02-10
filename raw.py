@@ -1,52 +1,32 @@
 #!/usr/bin/env python3
-#Pipe input from `lightning-cli listchannels`
-#pip3 install PyMaxflow mpmath
+# Pipe input from `lightning-cli listchannels`
+# pip3 install PyMaxflow mpmath
 import sys, json
 from functools import reduce
 import maxflow
 from mpmath import *
+import argparse
 
-root_node = 0
-root_node_id = "" 
-
-#Define the "low fee" threshold
-#These values are for the *total path* 
-base_fee_threshold = 0
-permillion_fee_threshold = 0
-
-#Define the minimum channels and capacity requirements to consider a node for an outgoing channel
-min_channels = 10
-min_capacity = 15000000 #NOT about total capacity of a channel path
-
-nodes = set()
-node_to_id = dict()
-id_to_node = dict()
-chan_fees = {}
-chan_capacity = {}
-outgoing = {}
-incoming = {}
-new_peer_benefit = {}
-
-nodes.add(root_node)
 
 def node_is_big_enough(n):
     num_channels = 0
     total_capacity = 0
     if n in outgoing:
         num_channels += len(outgoing[n])
-        total_capacity += reduce(lambda x,y: x+y, [chan_capacity[(n, o)] for o in outgoing[n]])
+        total_capacity += reduce(lambda x, y: x + y, [chan_capacity[(n, o)] for o in outgoing[n]])
     if n in incoming:
         num_channels += len(incoming[n])
-        total_capacity += reduce(lambda x,y: x+y, [chan_capacity[(i, n)] for i in incoming[n]])
+        total_capacity += reduce(lambda x, y: x + y, [chan_capacity[(i, n)] for i in incoming[n]])
 
     if num_channels < min_channels or total_capacity < min_capacity:
         return False
     else:
         return True
 
+
 def print_top_new_peers(num):
     cnt = 0
-    for (n, b) in sorted(new_peer_benefit.items(), key = lambda x: x[1], reverse = True):
+    for (n, b) in sorted(new_peer_benefit.items(), key=lambda x: x[1], reverse=True):
         if n in incoming[root_node] or n in outgoing[root_node]:
             continue
         if not node_is_big_enough(n):
@@ -56,6 +36,7 @@ def print_top_new_peers(num):
         cnt += 1
         if cnt >= num:
             break
+
 
 def get_unweighted_maxflow(source, sink, edges):
     node_map = dict()
@@ -86,17 +67,18 @@ def get_unweighted_maxflow(source, sink, edges):
 
     return g.maxflow()
 
+
 def get_lowfee_reachable_node_maxflows(proposed_new_peer=None, max_hops=None):
     lowfee_maxflows = dict()
     lowfee_reachable = set()
     lowfee_edges = set()
-    min_cost_to_node = dict() #maps to a list of 2 fee tuples (permillion, base) for minimum permillion fee and minimum base fee
+    min_cost_to_node = dict()  # maps to a list of 2 fee tuples (permillion, base) for minimum permillion fee and minimum base fee
     processed_nodes = set()
     queued = set()
     if max_hops == None:
         max_hops = 20
 
-    min_cost_to_node[root_node] = [(0, 0), (0, 0)] #[feerate_min_permillion, feerate_min_base]
+    min_cost_to_node[root_node] = [(0, 0), (0, 0)]  # [feerate_min_permillion, feerate_min_base]
     processed_nodes.add(root_node)
     queued.add(root_node)
     bfs_queue = [(n, 1) for n in outgoing[root_node]]
@@ -110,7 +92,7 @@ def get_lowfee_reachable_node_maxflows(proposed_new_peer=None, max_hops=None):
         min_cost_to_node[proposed_new_peer] = [(0, 0), (0, 0)]
         queued.add(proposed_new_peer)
         bfs_queue.append((proposed_new_peer, 1))
-    #use (0, 0) here instead of chan_fees[(root_node, n)] because we control these fees and they're independent of the peer node's low-fee reachability
+    # use (0, 0) here instead of chan_fees[(root_node, n)] because we control these fees and they're independent of the peer node's low-fee reachability
 
     while len(bfs_queue) > 0:
         (cur_node, cur_hops) = bfs_queue.pop(0)
@@ -152,32 +134,66 @@ def get_lowfee_reachable_node_maxflows(proposed_new_peer=None, max_hops=None):
                         bfs_queue.append((o, cur_hops + 1))
 
     for cur_node in lowfee_reachable:
-        #calculate the maxflow from root_node -> cur_node with all channels having unit weight
+        # calculate the maxflow from root_node -> cur_node with all channels having unit weight
         lowfee_maxflows[cur_node] = get_unweighted_maxflow(root_node, cur_node, lowfee_edges)
     return lowfee_maxflows
 
+
 #####################################################
 
-if len(sys.argv) < 4:
-    sys.stderr.write("Usage:\n")
-    sys.stderr.write("lightning-cli listchannels | %s root_node base_fee permillion_fee [min_channels] [min_capacity]\n" % sys.argv[0])
-    sys.stderr.write("\n")
-    sys.stderr.write("root_node: Your node pubkey\n")
-    sys.stderr.write("base_fee: The maximum base fee (in milisatoshi) accumulated along a route to remain \"low-fee reachable\"\n")
-    sys.stderr.write("permillion_fee: The maximum permillion fee accumulated along a route to remain \"low-fee reachable\"\n")
-    sys.stderr.write("min_channels: The minimum number of channels a node must have to consider peering with it (optional, default %d)\n" % min_channels)
-    sys.stderr.write("min_capacity: The minimum total capacity a node (in satoshi) must have to consider peering with it.  Unrelated to the capacity of channels along a route. (optional, default %d)\n" % min_capacity)
-    sys.exit(1)
-else:
-    root_node_id = sys.argv[1]
-    node_to_id[root_node] = root_node_id
-    id_to_node[root_node_id] = root_node
-    base_fee_threshold = int(sys.argv[2])
-    permillion_fee_threshold = int(sys.argv[3])
-    if len(sys.argv) >= 5:
-        min_channels = int(sys.argv[4])
-    if len(sys.argv) >= 6:
-        min_channels = int(sys.argv[5])
+parser = argparse.ArgumentParser(
+    description="""lightning-cli listchannels | find_nodes.py [args]""")
+parser.add_argument('root-node',
+                    help="Your node pubkey.",
+                    type=str)
+parser.add_argument('--base-fee', '-bf',
+                    help="The maximum base fee (millisatoshi) accumulated along a route to remain 'low-fee reachable'.",
+                    type=int,
+                    default=10000)
+parser.add_argument('--permillion-fee', '-pf',
+                    help="The maximum permillion fee accumulated along a route to remain 'low-fee reachable'.",
+                    type=int,
+                    default=100)
+parser.add_argument('--min-channels', '-ch',
+                    help="The minimum number of channels a node must have to consider peering with it.",
+                    type=int,
+                    default=10)
+parser.add_argument('--min-capacity', '-cp',
+                    help="The minimum total capacity a node (in satoshi) must have to consider peering with it.",
+                    type=int,
+                    default=15000000)
+try:
+    args = parser.parse_args()
+except:
+    parser.print_help()
+    sys.exit(0)
+
+root_node = 0
+root_node_id = args.root_node
+
+
+# Define the "low fee" threshold
+# These values are for the *total path*
+base_fee_threshold = args.base_fee
+permillion_fee_threshold = args.permillion_fee
+
+# Define the minimum channels and capacity requirements to consider a node for an outgoing channel
+min_channels = args.min_channels
+min_capacity = 15000000  # NOT about total capacity of a channel path
+
+nodes = set()
+node_to_id = dict()
+id_to_node = dict()
+chan_fees = {}
+chan_capacity = {}
+outgoing = {}
+incoming = {}
+new_peer_benefit = {}
+
+nodes.add(root_node)
+
+node_to_id[root_node] = root_node_id
+id_to_node[root_node_id] = root_node
 
 i = 1
 num_inactive_channels = 0
@@ -214,22 +230,24 @@ for chan in json.load(sys.stdin)["channels"]:
     chan_fees[(src, dest)] = (permillion_fee, base_fee)
     chan_capacity[(src, dest)] = chan["satoshis"]
 
-num_active_nodes = reduce(lambda x,y: x+y, map(lambda n: 1 if n in outgoing or n in incoming else 0, nodes))
-print("%d/%d active/total nodes and %d/%d active/total (unidirectional) channels found." % (num_active_nodes, len(nodes), len(chan_fees) - num_inactive_channels, len(chan_fees)))
+num_active_nodes = reduce(lambda x, y: x + y, map(lambda n: 1 if n in outgoing or n in incoming else 0, nodes))
+print("%d/%d active/total nodes and %d/%d active/total (unidirectional) channels found." % (
+    num_active_nodes, len(nodes), len(chan_fees) - num_inactive_channels, len(chan_fees)))
 nodes.remove(root_node)
 
 existing_reachable_nodes = get_lowfee_reachable_node_maxflows()
-maxflow_sum = reduce(lambda x,y: x+y, [n[1] for n in existing_reachable_nodes.items()])
-maxflow_prod = reduce(lambda x,y: x*y, [mpf(n[1]) for n in existing_reachable_nodes.items()])
+maxflow_sum = reduce(lambda x, y: x + y, [n[1] for n in existing_reachable_nodes.items()])
+maxflow_prod = reduce(lambda x, y: x * y, [mpf(n[1]) for n in existing_reachable_nodes.items()])
 maxflow_mean = float(maxflow_sum) / float(len(existing_reachable_nodes))
 maxflow_geomean = power(maxflow_prod, mpf(1.0) / mpf(len(existing_reachable_nodes)))
-print("%d \"low-fee reachable\" nodes already exist with mean and geomean route diversity %f and %s." % (len(existing_reachable_nodes), maxflow_mean, nstr(maxflow_geomean, 6)))
+print("%d \"low-fee reachable\" nodes already exist with mean and geomean route diversity %f and %s." % (
+    len(existing_reachable_nodes), maxflow_mean, nstr(maxflow_geomean, 6)))
 
-#Iterate over all other nodes, sorted by decreasing number of incoming channels under the theory that more connected nodes
-#are more likely to have higher peer benefit, thus giving good answers more quickly
+# Iterate over all other nodes, sorted by decreasing number of incoming channels under the theory that more connected nodes
+# are more likely to have higher peer benefit, thus giving good answers more quickly
 i = 0
 nodes_num_outgoing = {n: len(outgoing[n]) if n in outgoing else 0 for n in nodes}
-for n in [k for k, v in sorted(nodes_num_outgoing.items(), key = lambda x: x[1], reverse = True)]:
+for n in [k for k, v in sorted(nodes_num_outgoing.items(), key=lambda x: x[1], reverse=True)]:
     if n in outgoing[root_node]:
         continue
     if not node_is_big_enough(n):
@@ -254,9 +272,12 @@ for n in [k for k, v in sorted(nodes_num_outgoing.items(), key = lambda x: x[1],
             routability_improvements += 1
             if existing_reachable_nodes[r] < 3:
                 bonus += 3 - existing_reachable_nodes[r]
-    new_peer_benefit[n] = 3*num_new_nodes + routability_improvements + bonus
+    new_peer_benefit[n] = 3 * num_new_nodes + routability_improvements + bonus
     maxflow_geomean = power(maxflow_prod, mpf('1.0') / mpf(len(now_reachable)))
-    print("Peer %s has benefit %f with %d new low-fee reachable nodes and %d low-fee routability improvements, bonus %d; would make maxflow geomean %s" % (node_to_id[n], new_peer_benefit[n], num_new_nodes, routability_improvements, bonus, nstr(maxflow_geomean, 6)))
+    print(
+        "Peer %s has benefit %f with %d new low-fee reachable nodes and %d low-fee routability improvements, bonus %d; would make maxflow geomean %s" % (
+            node_to_id[n], new_peer_benefit[n], num_new_nodes, routability_improvements, bonus,
+            nstr(maxflow_geomean, 6)))
     i += 1
 
 print_top_new_peers(10)
