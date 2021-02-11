@@ -18,24 +18,21 @@ def node_is_big_enough(n):
         num_channels += len(incoming[n])
         total_capacity += reduce(lambda x, y: x + y, [chan_capacity[(i, n)] for i in incoming[n]])
 
-    if num_channels < min_channels or total_capacity < min_capacity:
-        return False
-    else:
-        return True
+    return num_channels >= min_channels and total_capacity >= min_capacity
 
 
 def print_top_new_peers(num):
-    cnt = 0
+    count = 0
     for (n, b) in sorted(new_peer_benefit.items(), key=lambda x: x[1], reverse=True):
         if n in incoming[root_node] or n in outgoing[root_node]:
             continue
-        if not node_is_big_enough(n):
+        elif not node_is_big_enough(n):
             continue
-
-        print("%f benefit from peering with node %s" % (b, node_to_id[n]))
-        cnt += 1
-        if cnt >= num:
-            break
+        else:
+            print(f"{b} benefit from peering with node {node_to_id[n]}")
+            count += 1
+            if count >= num:
+                break
 
 
 def get_unweighted_maxflow(source, sink, edges):
@@ -171,7 +168,6 @@ except:
 root_node = 0
 root_node_id = args.root_node
 
-
 # Define the "low fee" threshold
 # These values are for the *total path*
 base_fee_threshold = args.base_fee
@@ -179,7 +175,7 @@ permillion_fee_threshold = args.permillion_fee
 
 # Define the minimum channels and capacity requirements to consider a node for an outgoing channel
 min_channels = args.min_channels
-min_capacity = 15000000  # NOT about total capacity of a channel path
+min_capacity = args.min_capacity  # NOT about total capacity of a channel path
 
 nodes = set()
 node_to_id = dict()
@@ -197,8 +193,8 @@ id_to_node[root_node_id] = root_node
 
 i = 1
 num_inactive_channels = 0
-for chan in json.load(sys.stdin)["channels"]:
-    src_id = chan["source"]
+for chan in json.load(sys.stdin)["channels"]:# TODO
+    src_id = chan["source"]# TODO
     if src_id not in id_to_node:
         node_to_id[i] = src_id
         id_to_node[src_id] = i
@@ -206,7 +202,7 @@ for chan in json.load(sys.stdin)["channels"]:
         i += 1
     src = id_to_node[src_id]
 
-    dest_id = chan["destination"]
+    dest_id = chan["destination"]# TODO
     if dest_id not in id_to_node:
         node_to_id[i] = dest_id
         id_to_node[dest_id] = i
@@ -225,10 +221,10 @@ for chan in json.load(sys.stdin)["channels"]:
         incoming[dest] = set()
     incoming[dest].add(src)
 
-    base_fee = chan["base_fee_millisatoshi"]
-    permillion_fee = chan["fee_per_millionth"]
+    base_fee = chan["base_fee_millisatoshi"]# TODO
+    permillion_fee = chan["fee_per_millionth"]# TODO
     chan_fees[(src, dest)] = (permillion_fee, base_fee)
-    chan_capacity[(src, dest)] = chan["satoshis"]
+    chan_capacity[(src, dest)] = chan["satoshis"]# TODO
 
 num_active_nodes = reduce(lambda x, y: x + y, map(lambda n: 1 if n in outgoing or n in incoming else 0, nodes))
 print("%d/%d active/total nodes and %d/%d active/total (unidirectional) channels found." % (
