@@ -133,10 +133,12 @@ def save_graph(graph,loc):
                                                      "source": "node1_pub",
                                                      "target": "node2_pub"})
     graph_data = {"graph": graph_data, "timestamp": graph.name}
+    del graph_data["graph"]["directed"]
+    del graph_data["graph"]["multigraph"]
+    del graph_data["graph"]["graph"]
     mkdir(loc)
     with open(join(loc, str(graph.name)+'-graph.json'), 'w') as outfile:
         json.dump(graph_data, outfile)
-    # TODO: remove extraneous fields before saving
 
 
 def mkdir(d):
