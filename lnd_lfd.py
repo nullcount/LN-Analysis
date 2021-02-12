@@ -7,6 +7,7 @@ import maxflow
 from mpmath import *
 import argparse
 import numpy as np
+from copy import deepcopy
 
 
 class LowFeeDiversityFinder:
@@ -48,6 +49,8 @@ class LowFeeDiversityFinder:
         self.node_to_id[self.root_node] = self.root_node_id
         self.id_to_node[self.root_node_id] = self.root_node
 
+        self.flow_graph = None
+
         self.find_lfd_peers()
 
     def find_lfd_peers(self):
@@ -72,7 +75,7 @@ class LowFeeDiversityFinder:
             dest = self.id_to_node[dest_id]
 
             # NOTE: node1_policy = node2_policy, you can use either
-            if chan["node1_policy"]["disabled"]:
+            if chan["node1_policy"] is None or chan["node1_policy"]["disabled"]:
                 num_inactive_channels += 1
             else:
                 if src not in self.outgoing:
@@ -90,9 +93,8 @@ class LowFeeDiversityFinder:
 
         print("Finished first stage.")
 
-        num_active_nodes = reduce(lambda x, y: x + y,
-                                  map(lambda n: 1 if n in self.outgoing or n in self.incoming else 0, self.nodes))
-        print("%d/%d active/total nodes and %d/%d active/total (unidirectional) channels found." % (
+        num_active_nodes = sum(map(lambda n: 1 if n in self.outgoing or n in self.incoming else 0, self.nodes))
+        print("{}/{} active/total nodes and {}/{} active/total (unidirectional) channels found.".format(
             num_active_nodes, len(self.nodes), len(self.chan_fees) - num_inactive_channels, len(self.chan_fees)))
         self.nodes.remove(self.root_node)
 
@@ -107,7 +109,7 @@ class LowFeeDiversityFinder:
             maxflow_geomean = 0
         else:
             maxflow_geomean = power(maxflow_prod, mpf(1.0) / mpf(len(existing_reachable_nodes)))
-        print("%d \"low-fee reachable\" nodes already exist with mean and geomean route diversity %f and %s." % (
+        print("{} \"low-fee reachable\" nodes already exist with mean and geomean route diversity {} and {}.".format(
             len(existing_reachable_nodes), maxflow_mean, nstr(maxflow_geomean, 6)))
 
         # Iterate over all other nodes, sorted by decreasing number of incoming channels under the theory that more connected nodes
@@ -174,34 +176,24 @@ class LowFeeDiversityFinder:
                 if count >= num:
                     break
 
-    def get_unweighted_maxflow(self, source, sink, edges):
-        node_map = dict()
-        source_cap = 0
+    def get_unweighted_maxflow(self, sink, edges, node_map, source_cap, count):
+
+        self.flow_graph.reset()
+        self.flow_graph.add_nodes(count)
+
         sink_cap = 0
-
-        i = 0
-        for (src, dest) in edges:
-            if src not in node_map:
-                node_map[src] = i
-                i += 1
-            if dest not in node_map:
-                node_map[dest] = i
-                i += 1
-            if src == source:
-                source_cap += 1
-            if dest == sink:
-                sink_cap += 1
-        g = maxflow.Graph[int](i, len(edges))
-        g.add_nodes(i)
-
         for (src, dest) in edges:
             g_src = node_map[src]
             g_dest = node_map[dest]
-            g.add_edge(g_src, g_dest, 1, 0)
-        g.add_tedge(node_map[source], source_cap, 0)
-        g.add_tedge(node_map[sink], 0, sink_cap)
+            self.flow_graph.add_edge(g_src, g_dest, 1, 0)
 
-        return g.maxflow()
+            if dest == sink:
+                sink_cap += 1
+
+        self.flow_graph.add_tedge(node_map[self.root_node], source_cap, 0)
+        self.flow_graph.add_tedge(node_map[sink], 0, sink_cap)
+
+        return self.flow_graph.maxflow()
 
     def get_lowfee_reachable_node_maxflows(self, proposed_new_peer=None, max_hops=None):
         lowfee_maxflows = dict()
@@ -268,7 +260,26 @@ class LowFeeDiversityFinder:
                             queued.add(o)
                             bfs_queue.append((o, cur_hops + 1))
 
+        source_cap, node_map, count = self.preprocess(lowfee_edges)
         for cur_node in lowfee_reachable:
             # calculate the maxflow from root_node -> cur_node with all channels having unit weight
-            lowfee_maxflows[cur_node] = self.get_unweighted_maxflow(self.root_node, cur_node, lowfee_edges)
+            lowfee_maxflows[cur_node] = self.get_unweighted_maxflow(cur_node, lowfee_edges, node_map, source_cap, count)
         return lowfee_maxflows
+
+    def preprocess(self, lowfee_edges):
+        node_map = dict()
+        source_cap = 0
+        i = 0
+        for (src, dest) in lowfee_edges:
+            if src not in node_map:
+                node_map[src] = i
+                i += 1
+            if dest not in node_map:
+                node_map[dest] = i
+                i += 1
+            if src == self.root_node:
+                source_cap += 1
+
+        self.flow_graph = maxflow.Graph[int](i, len(lowfee_edges))
+
+        return source_cap, node_map, i
