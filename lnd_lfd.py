@@ -6,6 +6,7 @@ from functools import reduce
 import maxflow
 from mpmath import *
 import argparse
+import numpy as np
 
 
 class LowFeeDiversityFinder:
@@ -47,11 +48,13 @@ class LowFeeDiversityFinder:
         self.node_to_id[self.root_node] = self.root_node_id
         self.id_to_node[self.root_node_id] = self.root_node
 
+        self.find_lfd_peers()
+
     def find_lfd_peers(self):
 
         i = 1
         num_inactive_channels = 0
-        for chan in self.grap_json["edges"]:
+        for chan in self.grap_json["graph"]["edges"]:
             src_id = chan["node1_pub"]
             if src_id not in self.id_to_node:
                 self.node_to_id[i] = src_id
@@ -68,22 +71,24 @@ class LowFeeDiversityFinder:
                 i += 1
             dest = self.id_to_node[dest_id]
 
-            if chan["disabled"]:
-                num_inactive_channels += 1
-                continue
-
-            if src not in self.outgoing:
-                self.outgoing[src] = set()
-            self.outgoing[src].add(dest)
-            if dest not in self.incoming:
-                self.incoming[dest] = set()
-            self.incoming[dest].add(src)
-
             # NOTE: node1_policy = node2_policy, you can use either
-            base_fee = chan["node1_policy"]["fee_base_msat"]
-            permillion_fee = chan["node1_policy"]["fee_rate_milli_msat"]
-            self.chan_fees[(src, dest)] = (permillion_fee, base_fee)
-            self.chan_capacity[(src, dest)] = chan["capacity"]
+            if chan["node1_policy"]["disabled"]:
+                num_inactive_channels += 1
+            else:
+                if src not in self.outgoing:
+                    self.outgoing[src] = set()
+                self.outgoing[src].add(dest)
+                if dest not in self.incoming:
+                    self.incoming[dest] = set()
+                self.incoming[dest].add(src)
+
+                # NOTE: node1_policy = node2_policy, you can use either
+                base_fee = int(chan["node1_policy"]["fee_base_msat"])
+                permillion_fee = int(chan["node1_policy"]["fee_rate_milli_msat"])
+                self.chan_fees[(src, dest)] = (permillion_fee, base_fee)
+                self.chan_capacity[(src, dest)] = int(chan["capacity"])
+
+        print("Finished first stage.")
 
         num_active_nodes = reduce(lambda x, y: x + y,
                                   map(lambda n: 1 if n in self.outgoing or n in self.incoming else 0, self.nodes))
@@ -92,10 +97,16 @@ class LowFeeDiversityFinder:
         self.nodes.remove(self.root_node)
 
         existing_reachable_nodes = self.get_lowfee_reachable_node_maxflows()
-        maxflow_sum = reduce(lambda x, y: x + y, [n[1] for n in existing_reachable_nodes.items()])
-        maxflow_prod = reduce(lambda x, y: x * y, [mpf(n[1]) for n in existing_reachable_nodes.items()])
-        maxflow_mean = float(maxflow_sum) / float(len(existing_reachable_nodes))
-        maxflow_geomean = power(maxflow_prod, mpf(1.0) / mpf(len(existing_reachable_nodes)))
+        maxflow_sum = sum([n[1] for n in existing_reachable_nodes.items()])
+        maxflow_prod = np.prod([mpf(n[1]) for n in existing_reachable_nodes.items()])
+        if maxflow_sum == 0:
+            maxflow_mean = 0
+        else:
+            maxflow_mean = float(maxflow_sum) / float(len(existing_reachable_nodes))
+        if len(existing_reachable_nodes) == 0:
+            maxflow_geomean = 0
+        else:
+            maxflow_geomean = power(maxflow_prod, mpf(1.0) / mpf(len(existing_reachable_nodes)))
         print("%d \"low-fee reachable\" nodes already exist with mean and geomean route diversity %f and %s." % (
             len(existing_reachable_nodes), maxflow_mean, nstr(maxflow_geomean, 6)))
 
@@ -104,7 +115,7 @@ class LowFeeDiversityFinder:
         i = 0
         nodes_num_outgoing = {n: len(self.outgoing[n]) if n in self.outgoing else 0 for n in self.nodes}
         for n in [k for k, v in sorted(nodes_num_outgoing.items(), key=lambda x: x[1], reverse=True)]:
-            if n in self.outgoing[self.root_node]:
+            if n in self.outgoing.get(self.root_node, []):
                 continue
             if not self.node_is_big_enough(n):
                 continue
@@ -153,7 +164,7 @@ class LowFeeDiversityFinder:
     def print_top_new_peers(self, num):
         count = 0
         for (n, b) in sorted(self.new_peer_benefit.items(), key=lambda x: x[1], reverse=True):
-            if n in self.incoming[self.root_node] or n in self.outgoing[self.root_node]:
+            if n in self.incoming.get(self.root_node, []) or n in self.outgoing.get(self.root_node, []):
                 continue
             elif not self.node_is_big_enough(n):
                 continue
@@ -205,8 +216,8 @@ class LowFeeDiversityFinder:
         min_cost_to_node[self.root_node] = [(0, 0), (0, 0)]  # [feerate_min_permillion, feerate_min_base]
         processed_nodes.add(self.root_node)
         queued.add(self.root_node)
-        bfs_queue = [(n, 1) for n in self.outgoing[self.root_node]]
-        for o in self.outgoing[self.root_node]:
+        bfs_queue = [(n, 1) for n in self.outgoing.get(self.root_node, [])]
+        for o in self.outgoing.get(self.root_node, []):
             min_cost_to_node[o] = [(0, 0), (0, 0)]
             lowfee_edges.add((self.root_node, o))
             queued.add(o)
