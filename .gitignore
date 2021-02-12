@@ -1,5 +1,4 @@
 .ipynb_checkpoints/
 __pycache__
-graph.json
-config.yml
+snapshots/python-method/config.yml
 venv
