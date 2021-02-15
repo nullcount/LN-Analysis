@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# which lncli
+LNCLI=/usr/local/bin/lncli
+
 # Archive
 ARCHIVE=/mnt/hdd/snapshots
 
@@ -12,7 +15,7 @@ TIMESTAMP=$(date +'%s')
 PRETTY_TIME=$(pretty_time $TIMESTAMP)
 COUNT=$(ls /mnt/hdd/snapshots/*.json | wc -l)
 echo $COUNT
-lncli describegraph | jq -c . > $ARCHIVE/$PRETTY_TIME.json
+$LNCLI describegraph | jq -c . > $ARCHIVE/$PRETTY_TIME.json
 
 if [ "$COUNT" -gt 9 ] 
 then
