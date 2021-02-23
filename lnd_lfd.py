@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 # Pipe input from `lightning-cli listchannels`
 # pip3 install PyMaxflow mpmath
-import sys, json
 from functools import reduce
 import maxflow
 from mpmath import *
-import argparse
 import numpy as np
-from copy import deepcopy
+from pathlib import Path
+from helpers import getConfig
+from os.path import join, exists
+import csv
 
 
 class LowFeeDiversityFinder:
@@ -19,10 +20,12 @@ class LowFeeDiversityFinder:
                  min_channels=10,
                  min_capacity=15000000
                  ):
-
-        self.grap_json = graph_json
-        self.root_node = 0
-        self.root_node_id = root_node_id
+        self.config = getConfig()
+        self.benefits_dir = self.config["benefits_dir"]
+        self.graph_json = graph_json
+        self.name = self.graph_json["timestamp"]
+        self.root = 0
+        self.root_id = root_node_id
 
         # Define the "low fee" threshold
         # These values are for the *total path*
@@ -45,19 +48,22 @@ class LowFeeDiversityFinder:
         self.incoming = {}
         self.new_peer_benefit = {}
 
-        self.nodes.add(self.root_node)
-        self.node_to_id[self.root_node] = self.root_node_id
-        self.id_to_node[self.root_node_id] = self.root_node
+        self.nodes.add(self.root)
+        self.node_to_id[self.root] = self.root_id
+        self.id_to_node[self.root_id] = self.root
 
         self.flow_graph = None
-
-        self.find_lfd_peers()
+        if exists(join(self.benefits_dir, str(self.name) + "-graph.csv")):
+            self.load_peer_benefits()
+        else:
+            self.find_lfd_peers()
+            self.save_peer_benefits()
 
     def find_lfd_peers(self):
 
         i = 1
         num_inactive_channels = 0
-        for chan in self.grap_json["graph"]["edges"]:
+        for chan in self.graph_json["graph"]["edges"]:
             src_id = chan["node1_pub"]
             if src_id not in self.id_to_node:
                 self.node_to_id[i] = src_id
@@ -96,7 +102,7 @@ class LowFeeDiversityFinder:
         num_active_nodes = sum(map(lambda n: 1 if n in self.outgoing or n in self.incoming else 0, self.nodes))
         print("{}/{} active/total nodes and {}/{} active/total (unidirectional) channels found.".format(
             num_active_nodes, len(self.nodes), len(self.chan_fees) - num_inactive_channels, len(self.chan_fees)))
-        self.nodes.remove(self.root_node)
+        self.nodes.remove(self.root)
 
         existing_reachable_nodes = self.get_lowfee_reachable_node_maxflows()
         maxflow_sum = sum([n[1] for n in existing_reachable_nodes.items()])
@@ -117,7 +123,7 @@ class LowFeeDiversityFinder:
         i = 0
         nodes_num_outgoing = {n: len(self.outgoing[n]) if n in self.outgoing else 0 for n in self.nodes}
         for n in [k for k, v in sorted(nodes_num_outgoing.items(), key=lambda x: x[1], reverse=True)]:
-            if n in self.outgoing.get(self.root_node, []):
+            if n in self.outgoing.get(self.root, []):
                 continue
             if not self.node_is_big_enough(n):
                 continue
@@ -166,7 +172,7 @@ class LowFeeDiversityFinder:
     def print_top_new_peers(self, num):
         count = 0
         for (n, b) in sorted(self.new_peer_benefit.items(), key=lambda x: x[1], reverse=True):
-            if n in self.incoming.get(self.root_node, []) or n in self.outgoing.get(self.root_node, []):
+            if n in self.incoming.get(self.root, []) or n in self.outgoing.get(self.root, []):
                 continue
             elif not self.node_is_big_enough(n):
                 continue
@@ -190,7 +196,7 @@ class LowFeeDiversityFinder:
             if dest == sink:
                 sink_cap += 1
 
-        self.flow_graph.add_tedge(node_map[self.root_node], source_cap, 0)
+        self.flow_graph.add_tedge(node_map[self.root], source_cap, 0)
         self.flow_graph.add_tedge(node_map[sink], 0, sink_cap)
 
         return self.flow_graph.maxflow()
@@ -205,17 +211,17 @@ class LowFeeDiversityFinder:
         if max_hops == None:
             max_hops = 20
 
-        min_cost_to_node[self.root_node] = [(0, 0), (0, 0)]  # [feerate_min_permillion, feerate_min_base]
-        processed_nodes.add(self.root_node)
-        queued.add(self.root_node)
-        bfs_queue = [(n, 1) for n in self.outgoing.get(self.root_node, [])]
-        for o in self.outgoing.get(self.root_node, []):
+        min_cost_to_node[self.root] = [(0, 0), (0, 0)]  # [feerate_min_permillion, feerate_min_base]
+        processed_nodes.add(self.root)
+        queued.add(self.root)
+        bfs_queue = [(n, 1) for n in self.outgoing.get(self.root, [])]
+        for o in self.outgoing.get(self.root, []):
             min_cost_to_node[o] = [(0, 0), (0, 0)]
-            lowfee_edges.add((self.root_node, o))
+            lowfee_edges.add((self.root, o))
             queued.add(o)
 
         if proposed_new_peer is not None:
-            lowfee_edges.add((self.root_node, proposed_new_peer))
+            lowfee_edges.add((self.root, proposed_new_peer))
             min_cost_to_node[proposed_new_peer] = [(0, 0), (0, 0)]
             queued.add(proposed_new_peer)
             bfs_queue.append((proposed_new_peer, 1))
@@ -277,9 +283,29 @@ class LowFeeDiversityFinder:
             if dest not in node_map:
                 node_map[dest] = i
                 i += 1
-            if src == self.root_node:
+            if src == self.root:
                 source_cap += 1
 
         self.flow_graph = maxflow.Graph[int](i, len(lowfee_edges))
 
         return source_cap, node_map, i
+
+    def save_peer_benefits(self):
+        Path(self.benefits_dir).mkdir(exist_ok=True)
+        with open(join(self.benefits_dir, str(self.name) + "-graph.csv"), "w") as csvfile:
+            csv_writer = csv.writer(csvfile, lineterminator='\r')
+            csv_writer.writerow(["Node", "Benefit", "Connected", "Big_Enough"])
+            for (node, benefit) in sorted(self.new_peer_benefit.items(), key=lambda x: x[1], reverse=True):
+                connected = node in self.incoming.get(self.root, []) or node in self.outgoing.get(self.root, [])
+                node_id = self.node_to_id[node]
+                big_enough = self.node_is_big_enough(node)
+                csv_writer.writerow(map(str, [node_id, benefit, connected, big_enough]))
+
+    def load_peer_benefits(self):
+        self.new_peer_benefit = []
+        with open(join(self.benefits_dir, str(self.name) + "-graph.csv"), "r") as csvfile:
+            csv_reader = csv.reader(csvfile, lineterminator='\r')
+            headers = next(csv_reader)
+
+            for row in csv_reader:
+                self.new_peer_benefit.append(dict(zip(headers, row)))
