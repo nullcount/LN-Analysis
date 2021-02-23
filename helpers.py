@@ -22,7 +22,6 @@ from many_requests import ManyRequests
 from pathlib import Path
 from copy import deepcopy
 
-
 configPath = "./config.yml"
 
 
@@ -60,7 +59,7 @@ def getGraph(graphJson):
 
     # Parse and add nodes
     for node in graphJson['graph']['nodes']:
-        if node.get('last_update',0) == 0:
+        if node.get('last_update', 0) == 0:
             continue
         G.add_node(
             node['pub_key'],
@@ -106,7 +105,7 @@ def remove_subs(G):
     return G
 
 
-def clean_graph(graph,save = True):
+def clean_graph(graph, save=True):
     # take NetworkX Graph as input
     articulation_points = list(nx.articulation_points(graph))
     # remove articulation points, then remove components, then add back in articulation points
@@ -114,11 +113,10 @@ def clean_graph(graph,save = True):
     graph_copy.remove_nodes_from(articulation_points)
     components = list(nx.connected_components(graph_copy))
     mainnet = max(components, key=len)
-    kept_nodes = mainnet|set(articulation_points)
-    removed_nodes = set(graph.nodes())-kept_nodes
+    kept_nodes = mainnet | set(articulation_points)
+    removed_nodes = set(graph.nodes()) - kept_nodes
     graph.remove_nodes_from(removed_nodes)
     graph = remove_subs(graph)
-
 
     # save graph in cleaned_graphs dir
     if save:
@@ -127,7 +125,7 @@ def clean_graph(graph,save = True):
     return graph
 
 
-def save_graph(graph,loc):
+def save_graph(graph, loc):
     graph_data = nx.readwrite.node_link_data(graph, {"name": "pub_key",
                                                      "link": "edges",
                                                      "source": "node1_pub",
@@ -137,7 +135,7 @@ def save_graph(graph,loc):
     del graph_data["graph"]["multigraph"]
     del graph_data["graph"]["graph"]
     mkdir(loc)
-    with open(join(loc, str(graph.name)+'-graph.json'), 'w') as outfile:
+    with open(join(loc, str(graph.name) + '-graph.json'), 'w') as outfile:
         json.dump(graph_data, outfile)
 
 
@@ -166,19 +164,20 @@ def graphSelector():
         return getGraph(getDict(graphs[int(choice)]))
 
 
-def get_merchants():
+def get_merchant_data():
     # go to directory
     # grab all categories
     # go to all categories
     # grab all pub keys on each page
-    # return a list of pubkeys
+    # get json data of each merchant
+    # return a list of merchant data
 
-    if os.path.isfile("merchants.txt"):
-        print("Merchants list found, delete it to update.")
-        with open("merchants.txt", "r") as fileobj:
-            pub_keys = fileobj.read().splitlines()
+    if os.path.isfile("merchants.json"):
+        print("Merchants json found, delete it to update.")
+        with open("merchants.json", "r") as fileobj:
+            merchant_dict = json.load(fileobj)
     else:
-        print("Merchant list updating...")
+        print("Merchants json updating...")
         base_url = "https://1ml.com"
         directory_link = join(base_url, "directory")
         response = requests.get(directory_link)
@@ -203,6 +202,31 @@ def get_merchants():
 
         pub_keys = list(set([pub_key.text for pub_key in pub_keys]))
 
-        with open("merchants.txt", "w") as fileobj:
-            fileobj.writelines([pub_key+"\n" for pub_key in pub_keys])
-    return pub_keys
+        merchant_data = get_1ml_data(pub_keys)
+        merchant_dict = convert_data(merchant_data)
+
+        with open("merchants.json", "w") as fileobj:
+            json.dump(merchant_dict, fileobj)
+    return merchant_dict
+
+
+def get_1ml_data(pubkeys: list) -> list:
+    base_url = "https://1ml.com/node/{}/json"
+    urls = [base_url.format(pubkey) for pubkey in pubkeys]
+    all_json = []
+    responses = ManyRequests(n_workers=20, n_connections=20)(
+        method='GET', url=urls)
+    for response in responses:
+        son = response.json()
+        all_json.append(son)
+    return all_json
+
+
+def convert_data(merchant_data: list) -> dict:
+    # map each element in the list to its pubkey and return the resulting dict
+    merchant_dict = {}
+    for merchant in merchant_data:
+        pubkey = merchant["pub_key"]
+        merchant.pop("pub_key", None)
+        merchant_dict[pubkey] = merchant
+    return merchant_dict
