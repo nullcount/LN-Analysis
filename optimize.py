@@ -63,6 +63,7 @@ from string import ascii_lowercase, digits
 from collections import defaultdict
 import networkx as nx
 from itertools import combinations
+from lnd_lfd import LowFeeDiversityFinder
 
 
 # config = getConfig()
@@ -148,14 +149,6 @@ Mean Min HTLC ~ 848
 >50% of values are 1000
 """
 
-"""
-Search space:
-4 Channels from the union (intersection?) of:
-    - nodes belonging to longest shortest paths
-    - nodes with high betweeness centrality
-    - nodes that have 'low fee routing diversity' 
-"""
-
 
 def get_leaves(tree):
     leaves = []
@@ -167,7 +160,24 @@ def get_leaves(tree):
 
 def create_search_space():
     # first create a set containing nodes belonging to the longest shortest paths
-    pass
+    G = getGraph(getDict("cleaned_graphs/1608751820-graph.json"))
+    close_dict = nx.closeness_centrality(G)
+    sorted_close_dict = sorted(list(close_dict.items()), key=lambda kv: kv[1], reverse=True)
+    least_close = [x[0] for x in sorted_close_dict[-100:]]
+
+    between_dict = nx.betweenness_centrality(G)
+    sorted_btwn_dict = sorted(list(between_dict.items()), key=lambda kv: kv[1], reverse=True)
+    least_between = [x[0] for x in sorted_btwn_dict[-100:]]
+
+    graph_json = getDict("cleaned_graphs/1608751820-graph.json")
+    lfdf = LowFeeDiversityFinder(graph_json, None)
+    sorted_benefits_dict = sorted(lfdf.new_peer_benefit, key=lambda x: x["Benefit"], reverse=True)
+    most_beneficial = [x["Node"] for x in sorted_benefits_dict[:100]]
+
+    merchants = get_merchant_data()
+
+    search_space = set.union(set(least_close), set(least_between), set(most_beneficial), set(merchants.keys()))
+    return search_space
 
 
 def generate_long_paths(G, nodes):
@@ -207,45 +217,28 @@ def generate_all_paths(G, nodes):
 
 
 """
+Search space:
+4 Channels from the union of:
+    - 100 nodes with lowest closeness centrality
+    - 100 nodes with highest betweenness centrality
+    - 100 nodes with most low-fee reachable nodes
+    - all 1ML recognized vendors 
+"""
+
+"""
 Objective function:
 Considers:
-    - % of successful payments routed (maximize)
-    - number of -1 cheapest paths (minimize)
-    - total income (maximize) 
-    - number of transactions processed (maximize)
-    - cost to rebalance entire capacity (minimize)
-    - average age of connected nodes (maximize avg, minimize std dev)
+    - % of nodes of which our node belongs to the shortest path toward every vendor (maximize)
+    # - cost to rebalance entire capacity (minimize)
+    # - total income (maximize)
+    # - % of low-fee reachable nodes (maximize)
 """
 
 
 def main():
     # we want to make channels between nodes with high betweeness centrality to nodes with low closeness centrality
-
-    G = getGraph(getDict("cleaned_graphs/1608751820-graph.json"))
-    close_dict = nx.closeness_centrality(G)
-    sorted_close_dict = sorted(list(close_dict.items()), key=lambda kv: kv[1], reverse=True)
-    most_close = [x[0] for x in sorted_close_dict[:100]]
-    least_close = [x[0] for x in sorted_close_dict[-100:]]
-
-    between_dict = nx.betweenness_centrality(G)
-    sorted_btwn_dict = sorted(between_dict.items(), key=lambda kv: kv[1], reverse=True)
-    most_between = [x[0] for x in sorted_btwn_dict[:100]]
-    least_between = [x[0] for x in sorted_btwn_dict[-100:]]
-
-    # just for fun
-    close_and_between = list(set.intersection(set(most_close), set(most_between)))
-    far_and_beyond = list(set.intersection(set(least_close), set(least_between)))
-
-    long_paths, between_dict = generate_long_paths(G, list(G.nodes()))
-    lp, nc = generate_long_paths(G, least_close)
-    alp, anc = generate_all_paths(G, least_close)
-
-    print("Number of long paths found by picking random nodes from entire network:")
-    print(len(long_paths))
-    print("Number of long paths found by picking random pairs of 'unclose' nodes:")
-    print(len(lp))
-    print("Total number of long paths in the bottom 100 closest nodes:")
-    print(len(alp))
+    search_space = create_search_space()
+    print(search_space)
 
 
 main()
