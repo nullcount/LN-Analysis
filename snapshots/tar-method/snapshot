@@ -4,7 +4,7 @@
 LNCLI=/usr/local/bin/lncli
 
 # Archive
-ARCHIVE=/mnt/hdd/snapshots
+ARCHIVE=/mnt/storage/snapshots
 
 pretty_time () {
   date -d @$1 +"%Y-%m-%d_%H:%M:%S"
@@ -13,7 +13,7 @@ pretty_time () {
 # Time
 TIMESTAMP=$(date +'%s')
 PRETTY_TIME=$(pretty_time $TIMESTAMP)
-COUNT=$(ls /mnt/hdd/snapshots/*.json | wc -l)
+COUNT=$(ls $ARCHIVE/*.json | wc -l)
 echo $COUNT
 $LNCLI describegraph | jq -c . > $ARCHIVE/$PRETTY_TIME.json
 
