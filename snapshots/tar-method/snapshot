@@ -17,7 +17,7 @@ COUNT=$(ls $ARCHIVE/*.json | wc -l)
 echo $COUNT
 $LNCLI describegraph | jq -c . > $ARCHIVE/$PRETTY_TIME.json
 
-if [ "$COUNT" -gt 9 ] 
+if [ "$COUNT" -gt 23 ] 
 then
 	tar -czvf $ARCHIVE/archive/$TIMESTAMP.tar.gz $ARCHIVE/*.json 
 	rm $ARCHIVE/*.json
