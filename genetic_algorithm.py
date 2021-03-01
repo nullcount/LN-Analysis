@@ -125,12 +125,17 @@ if __name__ == '__main__':
 
 """
 The idea is that we have a single node in the network
-we want to add edges between this node and all of the other nodes 
-such that we maximize the number of shortest paths we belong to 
-between the set of vendors and all of the other nodes in the network (objective will get more complicated) 
+we want to add edges between this node and other nodes 
+such that we maximize the sum of the betweenness centralities of all our neighbors
+and the sum of the lengths of all the shortest paths of our neighbors 
+
+These objectives are heuristics for what we actually want. We can generate
+several candidates with this method quickly (hopefully) and then evaluate them
+with the actual objectives, which takes more time. 
 
 
-we have a bitstring of length equal to the number of nodes in the network 
+edge information have a bitstring of length equal to 
+the number of nodes we are considering opening channels with
 0 = our node does not share a channel with this node
 1 = our node does share a channel with this nodes  
 """
