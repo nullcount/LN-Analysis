@@ -21,6 +21,8 @@ import requests
 from many_requests import ManyRequests
 from pathlib import Path
 from copy import deepcopy
+from networkx.classes import graph as nx_Graph
+import pickle
 
 configPath = "./config.yml"
 
@@ -230,3 +232,44 @@ def convert_data(merchant_data: list) -> dict:
         merchant.pop("pub_key", None)
         merchant_dict[pubkey] = merchant
     return merchant_dict
+
+
+def save_load_shortest_path_lengths(base_graph: nx_Graph) -> dict:
+    """
+    If there exists a file titled ./aspl/<timestamp>.pickle, load and return it
+    else, find all shortest path lengths for a given graph, save and return the information
+    """
+    aspl_dir = "aspl"
+    Path(aspl_dir).mkdir(exist_ok=True)
+    filename = join(aspl_dir, "{}.pickle".format(base_graph.name))
+    if os.path.isfile(filename):
+        with open(filename, "rb") as f:
+            aspl_dict = pickle.load(f)
+    else:
+        _dict = dict(nx.all_pairs_shortest_path_length(base_graph))
+        aspl_dict = {}
+        for u in base_graph.nodes():
+            _sum = sum(_dict[u].values())
+            aspl_dict[u] = _sum
+
+        with open(filename, "wb") as f:
+            pickle.dump(aspl_dict, f)
+    return aspl_dict
+
+
+def save_load_betweenness_centralities(base_graph: nx_Graph) -> dict:
+    """
+    If there exists a file titled ./btwn/<timestamp>.pickle, load and return it
+    else, find all shortest path lengths for a given graph, save and return the information
+    """
+    btwn_dir = "btwn"
+    Path(btwn_dir).mkdir(exist_ok=True)
+    filename = join(btwn_dir, "{}.pickle".format(base_graph.name))
+    if os.path.isfile(filename):
+        with open(filename, "rb") as f:
+            btwn_dict = pickle.load(f)
+    else:
+        btwn_dict = dict(nx.betweenness_centrality(base_graph))
+        with open(filename, "wb") as f:
+            pickle.dump(btwn_dict, f)
+    return btwn_dict

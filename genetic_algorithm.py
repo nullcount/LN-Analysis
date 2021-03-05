@@ -1,7 +1,7 @@
-from helpers import getGraph, getDict
+from helpers import getGraph, getDict, save_load_shortest_path_lengths, save_load_betweenness_centralities
 from random import sample, randrange, uniform
 from tqdm import tqdm
-from networkx import all_pairs_shortest_path_length, betweenness_centrality
+from math import sqrt
 
 
 def weighted_random_choice(choices):
@@ -21,10 +21,13 @@ class Individual:
         self.o_indices = o_indices
         self.z_indices = z_indices
         self.fitness = 0
+        self.centrality_sum = 0
+        self.lp_sum = 0
 
-    def get_fitness(self):
-        # this will probably not be used so we don't have to make a copy of the base graph for every individual
-        self.fitness = sum(self.bitstring[:18])  # should end up with ones at the beginning
+    def set_fitness(self, centrality_sum, lp_sum):
+        self.centrality_sum = round(centrality_sum, 4)
+        self.btwn_sum = round(lp_sum, 4)
+        self.fitness = centrality_sum + lp_sum
 
     def mutate(self):
         # pick one non-zero index and one zero index and swap them
@@ -41,23 +44,24 @@ class Individual:
         self.z_indices.append(o_index)
 
     def __repr__(self):
-        return "Best Fitness: {} {}".format(self.fitness, self.bitstring)
+        return "{} {}".format(self.centrality_sum, self.btwn_sum)
 
 
 class GeneticAlgorithm:
-    def __init__(self, base_graph, num_edges, num_parents, popsize, num_generations, mrate):
+    def __init__(self, base_graph, num_edges, popsize, num_generations, mrate, aspl_dict, btwn_dict):
         self.base_graph = base_graph
-        # self.shortest_paths = all_pairs_shortest_path_length(self.base_graph)
-        # self.betweenness_centralities = betweenness_centrality(self.base_graph)
-        # self.index_to_node = {i: node for i, node in enumerate(self.base_graph.nodes())}
+        self.index_to_node = {i: node for i, node in enumerate(self.base_graph.nodes())}
+        self.aspl_dict = aspl_dict
+        self.aspl_norm = sum(aspl_dict.values())
+        self.btwn_dict = btwn_dict
+        self.btwn_norm = sum(btwn_dict.values())
         self.num_edges = num_edges
-        self.num_parents = num_parents
         self.graph_size = len(self.base_graph)
         self.popsize = popsize
         self.num_generations = num_generations
         self.mrate = mrate
         self.population = []
-        # self.best_individual = Individual(None, None, None)
+        self.node_id = "this_us"
 
     def run(self):
         self.populate()
@@ -65,7 +69,7 @@ class GeneticAlgorithm:
         for i in pbar:
             self.gen_num = i
             self.repopulate()
-            pbar.set_postfix({"Best Fitness": self.best_individual.fitness})
+            pbar.set_postfix({"Best": self.best_individual})
 
     def populate(self):
         for i in range(self.popsize):
@@ -80,7 +84,13 @@ class GeneticAlgorithm:
 
     def get_fitnesses(self):
         for individual in self.population:
-            individual.get_fitness()
+            edges = [(self.node_id, self.index_to_node[idx]) for idx in individual.o_indices]
+            centralities_sum = 0
+            lengths_sum = 0
+            for _, neighbor in edges:
+                centralities_sum += self.btwn_dict[neighbor] / self.btwn_norm
+                lengths_sum += self.aspl_dict[neighbor] / self.aspl_norm/2
+            individual.set_fitness(centralities_sum, lengths_sum)
 
     def select(self):
         new_population = []
@@ -120,7 +130,7 @@ class GeneticAlgorithm:
     def elitism(self, n):
         # generate offspring using the elitism strategy
         subpopulation = []
-        parents = self.population[:-self.num_parents]  # lets keep it simple with the elite strategy
+        parents = self.population[:-n]  # lets keep it simple with the elite strategy
         for i in range(n):
             p1, p2 = sample(parents, 2)
             subpopulation.append(self.crossover(p1, p2))
@@ -165,12 +175,16 @@ class GeneticAlgorithm:
 def main():
     base_graph = getGraph(getDict("cleaned_graphs/1608751820-graph.json"))
     # base_graph=range(2000)
+    all_shortest_path_lengths = save_load_shortest_path_lengths(base_graph)
+    betweenness_centralities = save_load_betweenness_centralities(base_graph)
     genetic_algorithm = GeneticAlgorithm(base_graph=base_graph,
-                                         num_edges=18,
-                                         num_parents=4,
+                                         num_edges=100,
                                          popsize=10,
-                                         num_generations=10000,
-                                         mrate=0.01)
+                                         num_generations=20000,
+                                         mrate=0.02,
+                                         aspl_dict=all_shortest_path_lengths,
+                                         btwn_dict=betweenness_centralities
+                                         )
     genetic_algorithm.run()
     print(genetic_algorithm.best_individual)
 
@@ -193,4 +207,12 @@ edge information have a bitstring of length equal to
 the number of nodes we are considering opening channels with
 0 = our node does not share a channel with this node
 1 = our node does share a channel with this nodes  
+"""
+
+"""
+find the diameter
+make a channel between them
+repeat
+
+then add a single channel to the node with highest betweenness
 """
