@@ -1,6 +1,18 @@
 from helpers import getGraph, getDict
 from random import sample, randrange, uniform
 from tqdm import tqdm
+from networkx import all_pairs_shortest_path_length, betweenness_centrality
+
+
+def weighted_random_choice(choices):
+    # https://stackoverflow.com/questions/10324015/fitness-proportionate-selection-roulette-wheel-selection-in-python
+    max = sum(choices.values())
+    pick = uniform(0, max)
+    current = 0
+    for key, value in choices.items():
+        current += value
+        if current > pick:
+            return key
 
 
 class Individual:
@@ -12,7 +24,7 @@ class Individual:
 
     def get_fitness(self):
         # this will probably not be used so we don't have to make a copy of the base graph for every individual
-        self.fitness = sum(self.bitstring[:4])  # should end up with ones at the beginning
+        self.fitness = sum(self.bitstring[:18])  # should end up with ones at the beginning
 
     def mutate(self):
         # pick one non-zero index and one zero index and swap them
@@ -29,12 +41,15 @@ class Individual:
         self.z_indices.append(o_index)
 
     def __repr__(self):
-        return "Best Fitness: {}".format(self.fitness)
+        return "Best Fitness: {} {}".format(self.fitness, self.bitstring)
 
 
 class GeneticAlgorithm:
     def __init__(self, base_graph, num_edges, num_parents, popsize, num_generations, mrate):
         self.base_graph = base_graph
+        # self.shortest_paths = all_pairs_shortest_path_length(self.base_graph)
+        # self.betweenness_centralities = betweenness_centrality(self.base_graph)
+        # self.index_to_node = {i: node for i, node in enumerate(self.base_graph.nodes())}
         self.num_edges = num_edges
         self.num_parents = num_parents
         self.graph_size = len(self.base_graph)
@@ -42,7 +57,7 @@ class GeneticAlgorithm:
         self.num_generations = num_generations
         self.mrate = mrate
         self.population = []
-        self.best_individual = Individual(None, None, None)
+        # self.best_individual = Individual(None, None, None)
 
     def run(self):
         self.populate()
@@ -54,16 +69,7 @@ class GeneticAlgorithm:
 
     def populate(self):
         for i in range(self.popsize):
-            bitstring = [0 for i in range(self.graph_size)]
-            z_indices = list(range(self.graph_size))
-            o_indices = []
-            for i in range(self.num_edges):
-                i = randrange(len(z_indices))
-                z_indices[i], z_indices[-1] = z_indices[-1], z_indices[i]
-                o_indices.append(z_indices.pop())
-            for index in o_indices:
-                bitstring[index] = 1
-            self.population.append(Individual(bitstring, o_indices, z_indices))
+            self.population.extend(self.new_random(self.popsize))
 
     def repopulate(self):
         self.get_fitnesses()
@@ -79,10 +85,17 @@ class GeneticAlgorithm:
     def select(self):
         new_population = []
         self.population = sorted(self.population, key=lambda x: x.fitness)
-        parents = self.population[:-self.num_parents]  # lets keep it simple with the elite strategy
-        for i in range(self.popsize - 1):
-            p1, p2 = sample(parents, 2)
-            new_population.append(self.crossover(p1, p2))
+        groups = 3
+        subpopsize = self.popsize // groups
+        remainder = self.popsize % groups
+
+        # elitism
+        new_population.extend(self.elitism(subpopsize))
+        # roulette
+        new_population.extend(self.roulette(subpopsize))
+        # new random
+        new_population.extend(self.new_random(subpopsize + remainder - 1))
+
         self.population = new_population
 
     def mutate_all(self):
@@ -104,18 +117,60 @@ class GeneticAlgorithm:
             bitstring[index] = 1
         return Individual(bitstring, o_indices, z_indices)
 
+    def elitism(self, n):
+        # generate offspring using the elitism strategy
+        subpopulation = []
+        parents = self.population[:-self.num_parents]  # lets keep it simple with the elite strategy
+        for i in range(n):
+            p1, p2 = sample(parents, 2)
+            subpopulation.append(self.crossover(p1, p2))
+        return subpopulation
+
+    def new_random(self, n):
+        # randomly generate new offspring
+        subpopulation = []
+        for i in range(n):
+            bitstring = [0 for _ in range(self.graph_size)]
+            z_indices = list(range(self.graph_size))
+            o_indices = []
+            for _ in range(self.num_edges):
+                idx = randrange(len(z_indices))
+                z_indices[idx], z_indices[-1] = z_indices[-1], z_indices[idx]
+                o_indices.append(z_indices.pop())
+            for index in o_indices:
+                bitstring[index] = 1
+            subpopulation.append(Individual(bitstring, o_indices, z_indices))
+        return subpopulation
+
+    def roulette(self, n):
+        max = sum([x.fitness for x in self.population])
+        subpopulation = []
+        for _ in range(n):
+            parents = []
+            for _ in range(2):
+                pick = uniform(0, max)
+                current = 0
+                for individual in self.population:
+                    current += individual.fitness
+                    if current > pick:
+                        parents.append(individual)
+                        break
+            subpopulation.append(self.crossover(*parents))
+        return subpopulation
+
     def get_best_individual(self):
         return max(self.population, key=lambda x: x.fitness)
 
 
 def main():
     base_graph = getGraph(getDict("cleaned_graphs/1608751820-graph.json"))
+    # base_graph=range(2000)
     genetic_algorithm = GeneticAlgorithm(base_graph=base_graph,
                                          num_edges=18,
                                          num_parents=4,
                                          popsize=10,
                                          num_generations=10000,
-                                         mrate=0.5)
+                                         mrate=0.01)
     genetic_algorithm.run()
     print(genetic_algorithm.best_individual)
 
