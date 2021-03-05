@@ -51,8 +51,8 @@ def isCommand(name):
 
 
 def getDict(f):
-    with open(f) as j:
-        return json.load(j)
+    with open(f,"rb") as j:
+        return json.load(j, encoding='utf-32')
 
 
 def getGraph(graphJson):
