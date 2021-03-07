@@ -19,8 +19,8 @@ class Individual:
         self.lp_sum = 0
 
     def set_fitness(self, centrality_sum, lp_sum):
-        self.centrality_sum = round(centrality_sum, 4)
-        self.btwn_sum = round(lp_sum, 4)
+        self.centrality_sum = round(centrality_sum, 5)
+        self.btwn_sum = round(lp_sum, 5)
         self.fitness = centrality_sum + lp_sum
 
     def mutate(self):
@@ -46,7 +46,7 @@ class Individual:
 class GeneticAlgorithm:
     def __init__(self, base_graph, num_edges, popsize, num_generations, mrate, aspl_dict, btwn_dict):
         self.base_graph = base_graph
-        self.nodes = self.get_nodes()
+        self.nodes = self.filter_nodes()
         self.graph_size = len(self.nodes)
         self.index_to_node = {i: node for i, node in enumerate(self.nodes)}
         self.aspl_dict = aspl_dict
@@ -110,12 +110,6 @@ class GeneticAlgorithm:
 
         self.population = new_population
 
-    def mutate_all(self):
-        for individual in self.population:
-            chance = uniform(0, 1)
-            if chance >= self.mrate:
-                individual.mutate()
-
     def crossover(self, x, y):
         bitstring = [0 for i in range(self.graph_size)]
         # join the list of one indices and sample from it
@@ -128,6 +122,12 @@ class GeneticAlgorithm:
         for index in o_indices:
             bitstring[index] = 1
         return Individual(bitstring, o_indices, z_indices)
+
+    def mutate_all(self):
+        for individual in self.population:
+            chance = uniform(0, 1)
+            if chance >= self.mrate:
+                individual.mutate()
 
     def elitism(self, n):
         # generate offspring using the elitism strategy
@@ -173,7 +173,7 @@ class GeneticAlgorithm:
     def get_best_individual(self):
         return max(self.population, key=lambda x: x.fitness)
 
-    def get_nodes(self):
+    def filter_nodes(self):
         # returns a list of nodes after constraints
         # possible constraints: capacity, whether we are already connected to them
         min_capacity = 1000000
@@ -206,6 +206,9 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+# TODO: transition to numpy for larger populations
+# TODO: normalize data using histogram or digitize
 
 """
 The idea is that we have a single node in the network
