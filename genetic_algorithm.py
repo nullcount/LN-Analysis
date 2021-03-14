@@ -1,7 +1,8 @@
-from helpers import getGraph, getDict, save_load_shortest_path_lengths, save_load_betweenness_centralities
+from helpers import getGraph, getDict, save_load_betweenness_centralities, save_load_closeness_centralities
 from random import sample, randrange, uniform
 from tqdm import tqdm
-from math import sqrt
+import math
+from scipy.stats import percentileofscore
 
 
 class Individual:
@@ -15,13 +16,15 @@ class Individual:
         self.o_indices = o_indices
         self.z_indices = z_indices
         self.fitness = 0
-        self.centrality_sum = 0
-        self.lp_sum = 0
+        self.closeness_sum = 0
+        self.betweenness_sum = 0
 
-    def set_fitness(self, centrality_sum, lp_sum):
-        self.centrality_sum = round(centrality_sum, 5)
-        self.btwn_sum = round(lp_sum, 5)
-        self.fitness = centrality_sum + lp_sum
+    def set_fitness(self, closeness_sum, betweenness_sum):
+        self.closeness_sum = round(closeness_sum, 5)
+        self.betweenness_sum = round(betweenness_sum, 5)
+
+        # maximize a vectors distance from zero vector
+        self.fitness = math.sqrt(pow(closeness_sum, 2) + pow(betweenness_sum, 2))
 
     def mutate(self):
         """
@@ -40,31 +43,31 @@ class Individual:
         self.z_indices.append(o_index)
 
     def __repr__(self):
-        return "{} {}".format(self.centrality_sum, self.btwn_sum)
+        return "{} {}".format(self.closeness_sum, self.betweenness_sum)
 
 
 class GeneticAlgorithm:
-    def __init__(self, base_graph, num_edges, popsize, num_generations, mrate, aspl_dict, btwn_dict):
+    def __init__(self, base_graph, num_edges, popsize, num_generations, mrate, btwn_dict, close_dict):
         self.base_graph = base_graph
         self.nodes = self.filter_nodes()
         self.graph_size = len(self.nodes)
         self.index_to_node = {i: node for i, node in enumerate(self.nodes)}
-        self.aspl_dict = aspl_dict
-        self.aspl_norm = sum(aspl_dict.values())
+        self.close_dict = close_dict
         self.btwn_dict = btwn_dict
-        self.btwn_norm = sum(btwn_dict.values())
+        self.filter_dicts()
+        self.normalize_dicts()
         self.num_edges = num_edges
         self.popsize = popsize
         self.num_generations = num_generations
         self.mrate = mrate
         self.population = []
         self.node_id = "this_us"
+        self.best_individual = None
 
     def run(self):
         self.populate()
         pbar = tqdm(range(self.num_generations))
         for i in pbar:
-            self.gen_num = i
             self.repopulate()
             pbar.set_postfix({"Best": self.best_individual})
         edges = [self.index_to_node[idx] for idx in self.best_individual.o_indices]
@@ -87,12 +90,12 @@ class GeneticAlgorithm:
     def get_fitnesses(self):
         for individual in self.population:
             edges = [(self.node_id, self.index_to_node[idx]) for idx in individual.o_indices]
-            centralities_sum = 0
-            lengths_sum = 0
+            closeness_sum = 0
+            betweenness_sum = 0
             for _, neighbor in edges:
-                centralities_sum += self.btwn_dict[neighbor] / self.btwn_norm
-                lengths_sum += sqrt(self.aspl_dict[neighbor]) / self.graph_size
-            individual.set_fitness(centralities_sum, lengths_sum)
+                closeness_sum += self.close_dict[neighbor]
+                betweenness_sum += self.btwn_dict[neighbor]
+            individual.set_fitness(closeness_sum, betweenness_sum)
 
     def select(self):
         new_population = []
@@ -122,12 +125,6 @@ class GeneticAlgorithm:
         for index in o_indices:
             bitstring[index] = 1
         return Individual(bitstring, o_indices, z_indices)
-
-    def mutate_all(self):
-        for individual in self.population:
-            chance = uniform(0, 1)
-            if chance >= self.mrate:
-                individual.mutate()
 
     def elitism(self, n):
         # generate offspring using the elitism strategy
@@ -170,35 +167,60 @@ class GeneticAlgorithm:
             subpopulation.append(self.crossover(*parents))
         return subpopulation
 
+    def mutate_all(self):
+        for individual in self.population:
+            chance = uniform(0, 1)
+            if chance >= self.mrate:
+                individual.mutate()
+
     def get_best_individual(self):
         return max(self.population, key=lambda x: x.fitness)
 
     def filter_nodes(self):
         # returns a list of nodes after constraints
         # possible constraints: capacity, whether we are already connected to them
-        min_capacity = 1000000
+        min_capacity = 10 ** 6
         tolerance = 1
         nodes = []
         for node in self.base_graph.nodes():
             nbrs = list(self.base_graph.neighbors(node))
+            if len(nbrs) < 4:
+                continue
             capacity = sum([int(self.base_graph[node][nbrs[i]]["capacity"]) for i in range(len(nbrs))])
             if capacity >= min_capacity - tolerance:
                 nodes.append(node)
         return nodes
 
+    def filter_dicts(self):
+        # filter dictionaries based on what nodes are in self.nodes
+        self.btwn_dict = {k: self.btwn_dict[k] for k in self.nodes}
+        self.close_dict = {k: self.close_dict[k] for k in self.nodes}
+
+    def normalize_dicts(self):
+        # closeness_dict
+        ckeys, cvalues = list(self.close_dict.keys()), list(self.close_dict.values())
+        # subtract from 100 because we want to minimize closeness
+        percentiles = [(100 - percentileofscore(cvalues, value, "rank")) / 10000 for value in cvalues]
+        self.close_dict = dict(zip(ckeys, percentiles))
+
+        # betweeness dict
+        bkeys, bvalues = list(self.btwn_dict.keys()), list(self.btwn_dict.values())
+        # take actual value because we want to maximize betweenness
+        percentiles = [percentileofscore(bvalues, value, "rank") / 10000 for value in bvalues]
+        self.btwn_dict = dict(zip(bkeys, percentiles))
+
 
 def main():
     base_graph = getGraph(getDict("cleaned_graphs/1614938401-graph.json"))
-    # base_graph=range(2000)
-    all_shortest_path_lengths = save_load_shortest_path_lengths(base_graph)
     betweenness_centralities = save_load_betweenness_centralities(base_graph)
+    closeness_centralities = save_load_closeness_centralities(base_graph)
     genetic_algorithm = GeneticAlgorithm(base_graph=base_graph,
                                          num_edges=18,
                                          popsize=20,
                                          num_generations=30000,
                                          mrate=0.01,
-                                         aspl_dict=all_shortest_path_lengths,
-                                         btwn_dict=betweenness_centralities
+                                         btwn_dict=betweenness_centralities,
+                                         close_dict=closeness_centralities
                                          )
     genetic_algorithm.run()
     print(genetic_algorithm.best_individual)
@@ -207,18 +229,18 @@ def main():
 if __name__ == '__main__':
     main()
 
-# TODO: transition to numpy for larger populations
-# TODO: normalize data using histogram or digitize
-
+# TODO: evaluate recommendations using LN simulator
+# TODO: add parameter to keep x number of best individuals
+# TODO: transition to numpy arrays for larger populations
 """
 The idea is that we have a single node in the network
 we want to add edges between this node and other nodes 
 such that we maximize the sum of the betweenness centralities of all our neighbors
-and the sum of the lengths of all the shortest paths of our neighbors 
+and minimize the closeness centrality of all our neighbors.
 
 These objectives are heuristics for what we actually want. We can generate
 several candidates with this method quickly (hopefully) and then evaluate them
-with the actual objectives, which takes more time. 
+with a better method, a simulator, which takes more time. 
 
 
 edge information have a bitstring of length equal to 
@@ -228,7 +250,9 @@ the number of nodes we are considering opening channels with
 """
 
 """
-find the diameter
+Another algorithm of interest: 
+
+find the diameter nodes
 make a channel between them
 repeat
 
