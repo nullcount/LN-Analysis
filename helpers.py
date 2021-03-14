@@ -51,7 +51,7 @@ def isCommand(name):
 
 
 def getDict(f):
-    with open(f,"rb") as j:
+    with open(f, "rb") as j:
         return json.load(j, encoding='utf-32')
 
 
@@ -234,29 +234,6 @@ def convert_data(merchant_data: list) -> dict:
     return merchant_dict
 
 
-def save_load_shortest_path_lengths(base_graph: nx_Graph) -> dict:
-    """
-    If there exists a file titled ./aspl/<timestamp>.pickle, load and return it
-    else, find all shortest path lengths for a given graph, save and return the information
-    """
-    aspl_dir = "aspl"
-    Path(aspl_dir).mkdir(exist_ok=True)
-    filename = join(aspl_dir, "{}.pickle".format(base_graph.name))
-    if os.path.isfile(filename):
-        with open(filename, "rb") as f:
-            aspl_dict = pickle.load(f)
-    else:
-        _dict = dict(nx.all_pairs_shortest_path_length(base_graph))
-        aspl_dict = {}
-        for u in base_graph.nodes():
-            _sum = sum(_dict[u].values())
-            aspl_dict[u] = _sum
-
-        with open(filename, "wb") as f:
-            pickle.dump(aspl_dict, f)
-    return aspl_dict
-
-
 def save_load_betweenness_centralities(base_graph: nx_Graph) -> dict:
     """
     If there exists a file titled ./btwn/<timestamp>.pickle, load and return it
@@ -273,3 +250,21 @@ def save_load_betweenness_centralities(base_graph: nx_Graph) -> dict:
         with open(filename, "wb") as f:
             pickle.dump(btwn_dict, f)
     return btwn_dict
+
+
+def save_load_closeness_centralities(base_graph: nx_Graph) -> dict:
+    """
+    If there exists a file titled ./close/<timestamp>.pickle, load and return it
+    else, find all shortest path lengths for a given graph, save and return the information
+    """
+    close_dir = "close"
+    Path(close_dir).mkdir(exist_ok=True)
+    filename = join(close_dir, "{}.pickle".format(base_graph.name))
+    if os.path.isfile(filename):
+        with open(filename, "rb") as f:
+            close_dict = pickle.load(f)
+    else:
+        close_dict = dict(nx.closeness_centrality(base_graph))
+        with open(filename, "wb") as f:
+            pickle.dump(close_dict, f)
+    return close_dict
