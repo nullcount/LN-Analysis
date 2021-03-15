@@ -190,7 +190,7 @@ class GeneticAlgorithm:
             nbrs = list(self.base_graph.neighbors(node))
             if len(nbrs) < 4:
                 continue
-            if self.btwn_dict[node] < 0.5 and self.close_dict[node] < 0.5:
+            if self.btwn_dict[node] < 0.8 and self.close_dict[node] < 0.8:
                 continue
             capacity = sum([int(self.base_graph[node][nbrs[i]]["capacity"]) for i in range(len(nbrs))])
             if capacity < min_capacity - tolerance:
@@ -230,7 +230,7 @@ def eval_recommendation(base_graph, edges, node_id):
                                         count,
                                         drop_disabled=drop_disabled,
                                         drop_low_cap=drop_low_cap,
-                                        epsilon=epsilon, 
+                                        epsilon=epsilon,
                                         with_depletion=with_depletion
                                         )
     cheapest_paths, _, all_router_fees, _ = simulator.simulate(weight="total_fee", with_node_removals=False)
@@ -247,7 +247,7 @@ def main():
                                          base_graph=base_graph,
                                          num_edges=18,
                                          popsize=20,
-                                         num_generations=3000,
+                                         num_generations=30000,
                                          mrate=0.1,
                                          btwn_dict=betweenness_centralities,
                                          close_dict=closeness_centralities
