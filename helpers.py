@@ -23,6 +23,10 @@ from pathlib import Path
 from copy import deepcopy
 from networkx.classes import graph as nx_Graph
 import pickle
+from lnsimulator.ln_utils import load_temp_data, generate_directed_graph
+from random import randint
+import time
+import pandas as pd
 
 configPath = "./config.yml"
 
@@ -268,3 +272,75 @@ def save_load_closeness_centralities(base_graph: nx_Graph) -> dict:
         with open(filename, "wb") as f:
             pickle.dump(close_dict, f)
     return close_dict
+
+
+def make_edges_from_template(node_id, nbr_ids):
+    edges = []
+    for nbr_id in nbr_ids:
+        edge = {
+            "channel_id": randint(799999999999999999, 999999999999999999),
+            "last_update": time.time(),
+            "capacity": 1000000,
+            "node1_policy": {
+                "time_lock_delta": 100,
+                "min_htlc": 1000,
+                "fee_base_msat": 1000,
+                "fee_rate_milli_msat": 1,
+                "disabled": False,
+            },
+            "node2_policy": {
+                "time_lock_delta": 100,
+                "min_htlc": 1000,
+                "fee_base_msat": 1000,
+                "fee_rate_milli_msat": 1,
+                "disabled": False,
+            },
+            "node1_pub": node_id,
+            "node2_pub": nbr_id,
+        }  # TODO: Add node policies using above info
+        edges.append(edge)
+    return edges
+
+
+def make_node_from_template(node_id):
+    node = {
+        "pub_key": node_id,
+        "last_update": time.time()
+    }
+    return node
+
+
+def preprocess_json_file(json_file, additional_node, additional_edges):
+    """Generate directed graph data (traffic simulator input format) from json LN snapshot file."""
+    json_files = [json_file]
+    # print("\ni.) Load data")
+    node_keys = ["pub_key", "last_update"],
+    EDGE_KEYS = ["node1_pub", "node2_pub", "last_update", "capacity", "channel_id", 'node1_policy', 'node2_policy']
+    nodes, edges = load_temp_data(json_files, edge_keys=EDGE_KEYS)
+    # print(len(nodes), len(edges))
+
+    # add candidate nodes
+    pd_add_node = pd.DataFrame([additional_node])
+    pd_add_edges = pd.DataFrame(additional_edges)
+    edges = pd.concat([edges, pd_add_edges])
+    nodes = pd.concat([nodes, pd_add_node])
+    edges = edges.reset_index(drop=True)
+    nodes = nodes.reset_index(drop=True)
+    # print(len(nodes), len(edges))
+
+    # print("Remove records with missing node policy")
+    # print(edges.isnull().sum() / len(edges))
+    origi_size = len(edges)
+    edges = edges[(~edges["node1_policy"].isnull()) & (~edges["node2_policy"].isnull())]
+    # print(origi_size - len(edges))
+    # print("\nii.) Transform undirected graph into directed graph")
+    directed_df = generate_directed_graph(edges)
+    # print(directed_df.head())
+    # print("\niii.) Fill missing policy values with most frequent values")
+    # print("missing values for columns:")
+    # print(directed_df.isnull().sum())
+    directed_df = directed_df.fillna(
+        {"disabled": False, "fee_base_msat": 1000, "fee_rate_milli_msat": 1, "min_htlc": 1000})
+    for col in ["fee_base_msat", "fee_rate_milli_msat", "min_htlc"]:
+        directed_df[col] = directed_df[col].astype("float64")
+    return directed_df
