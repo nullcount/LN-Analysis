@@ -4,7 +4,6 @@ from tqdm import tqdm
 import math
 from scipy.stats import percentileofscore
 import lnsimulator.simulator.transaction_simulator as ts
-from lnsimulator.ln_utils import preprocess_json_file
 
 
 class Individual:
@@ -45,7 +44,7 @@ class Individual:
         self.z_indices.append(o_index)
 
     def __repr__(self):
-        return "{} {}".format(self.closeness_sum, self.betweenness_sum)
+        return "{} {}".format(self.fitness, self.closeness_sum, self.betweenness_sum)
 
 
 class GeneticAlgorithm:
@@ -183,81 +182,114 @@ class GeneticAlgorithm:
     def filter_nodes(self):
         # returns a list of nodes after constraints
         # possible constraints: capacity, whether we are already connected to them
-        min_capacity = 10 ** 6
+        min_capacity = 2 * 10 ** 6
+        num_channels = 4
         tolerance = 1
         nodes = []
+        left, right = 0.50, 0.95  # defines a spread of nodes to choose from
+
         for node in self.base_graph.nodes():
             nbrs = list(self.base_graph.neighbors(node))
-            if len(nbrs) < 4:
+            if len(nbrs) < num_channels:
+                # must have more than 3 channels
                 continue
-            if self.btwn_dict[node] < 0.8 and self.close_dict[node] < 0.8:
+            if (left < self.btwn_dict[node] < right) or (left < self.close_dict[node] < right):
+                # excludes nodes within this spread
                 continue
             capacity = sum([int(self.base_graph[node][nbrs[i]]["capacity"]) for i in range(len(nbrs))])
             if capacity < min_capacity - tolerance:
+                # must have this capacity
                 continue
             nodes.append(node)
+        print(len(nodes))
+
+        # updates the values in these dictionaries so that the fitness function still works for the bottom spread
+        # values for the bottom spread are increased by the top spread, and vice versa
+        for k, v in self.btwn_dict.items():
+            if v < left:
+                self.btwn_dict[k] = right - v
+            if v > right:
+                self.btwn_dict[k] = v - left
+        for k, v in self.close_dict.items():
+            if v < left:
+                self.close_dict[k] = right - v
+            if v > right:
+                self.close_dict[k] = v - left
         return nodes
 
     def normalize_dicts(self):
         # closeness_dict
         ckeys, cvalues = list(self.close_dict.keys()), list(self.close_dict.values())
-        # subtract from 100 because we want to minimize closeness
-        percentiles = [(100 - percentileofscore(cvalues, value, "rank")) / 100 for value in cvalues]
+        # we want to maximize closeness
+        percentiles = [(percentileofscore(cvalues, value, "rank")) / 100 for value in cvalues]
         self.close_dict = dict(zip(ckeys, percentiles))
 
         # betweeness dict
         bkeys, bvalues = list(self.btwn_dict.keys()), list(self.btwn_dict.values())
-        # take actual value because we want to maximize betweenness
-        percentiles = [percentileofscore(bvalues, value, "rank") / 100 for value in bvalues]
+        # we want to maximize betweenness
+        percentiles = [(percentileofscore(bvalues, value, "rank")) / 100 for value in bvalues]
         self.btwn_dict = dict(zip(bkeys, percentiles))
 
 
-def eval_recommendation(base_graph, edges, node_id):
+def eval_recommendation(base_graph, edge_ids, node_id):
     # TODO: Add edges to json before processing into directed edges
-    directed_edges = preprocess_json_file("cleaned_graphs/1614938401-graph.json")
+    new_edges = make_edges_from_template(node_id, edge_ids)
+    new_node = make_node_from_template(node_id)
+    directed_edges = preprocess_json_file(base_graph, new_node, new_edges)
     merchant_data = get_merchant_data()
-    merchants = list(merchant_data.keys())
-    amount = 60000
-    count = 7000
+    merchant_keys = list(merchant_data.keys())
+
+    # SIMULATOR PARAMS
+    transaction_size = 12000
+    num_transactions = 8000  # (~.96 bitcoin rough estimate of the amount transacted per day )
     epsilon = 0.8
     drop_disabled = True
     drop_low_cap = False
     with_depletion = True
 
     simulator = ts.TransactionSimulator(directed_edges,
-                                        merchants,
-                                        amount,
-                                        count,
+                                        merchant_keys,
+                                        transaction_size,
+                                        num_transactions,
                                         drop_disabled=drop_disabled,
                                         drop_low_cap=drop_low_cap,
                                         epsilon=epsilon,
                                         with_depletion=with_depletion
                                         )
     cheapest_paths, _, all_router_fees, _ = simulator.simulate(weight="total_fee", with_node_removals=False)
-
     node_stats = all_router_fees.groupby("node")["fee"].sum()[node_id]
+    top_5_stats = all_router_fees.groupby("node")["fee"].sum().sort_values(ascending=False).head(5)
+    median = all_router_fees.groupby("node")["fee"].sum().median()
+    print("Top 5 earners:")
+    print(top_5_stats)
+    print("Median")  # 50% of nodes make less than this amount per day
+    print(median)
+    print("Us:")
+    print(node_stats)
 
 
 def main():
     node_id = "this_us"
-    base_graph = getGraph(getDict("cleaned_graphs/1614938401-graph.json"))
+    test_graph = "cleaned_graphs/1614938401-graph.json"
+    base_graph = getGraph(getDict(test_graph))
     betweenness_centralities = save_load_betweenness_centralities(base_graph)
     closeness_centralities = save_load_closeness_centralities(base_graph)
     genetic_algorithm = GeneticAlgorithm(node_id=node_id,
                                          base_graph=base_graph,
                                          num_edges=18,
-                                         popsize=20,
-                                         num_generations=30000,
-                                         mrate=0.1,
+                                         popsize=100,
+                                         num_generations=5000,
+                                         mrate=0.01,
                                          btwn_dict=betweenness_centralities,
                                          close_dict=closeness_centralities
                                          )
-    edges = genetic_algorithm.run()
+    edge_ids = genetic_algorithm.run()
+
     print("Edge recommendations:")
     print(genetic_algorithm.best_individual)
-    for edge in edges:
-        print(edge)
-    # eval_recommendation(base_graph, edges, node_id)
+    for edge_id in edge_ids:
+        print(edge_id)
+    eval_recommendation(test_graph, edge_ids, node_id)
 
 
 if __name__ == '__main__':
