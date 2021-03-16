@@ -1,9 +1,10 @@
 from helpers import *
-from random import sample, randrange, uniform
+from random import sample, randrange, uniform, seed
 from tqdm import tqdm
 import math
 from scipy.stats import percentileofscore
 import lnsimulator.simulator.transaction_simulator as ts
+import numpy as np
 
 
 class Individual:
@@ -182,19 +183,34 @@ class GeneticAlgorithm:
     def filter_nodes(self):
         # returns a list of nodes after constraints
         # possible constraints: capacity, whether we are already connected to them
+
+        # capacity
         min_capacity = 2 * 10 ** 6
-        num_channels = 4
         tolerance = 1
+
+        # channels
+        min_channels = 4
+        max_channels = float("inf")
         nodes = []
-        left, right = 0.50, 0.95  # defines a spread of nodes to choose from
+
+        # betweenness/closeness
+        left, right = 0.60, 0.90  # defines a spread of nodes to choose from
+        min_percentile = 0.20
+        max_percentile = 1.00
+        #  0% |xx|----|xxx|-| 100%
+        # only dashed sections are considered 
 
         for node in self.base_graph.nodes():
             nbrs = list(self.base_graph.neighbors(node))
-            if len(nbrs) < num_channels:
+            if min_channels > len(nbrs) or len(nbrs) > max_channels:
                 # must have more than 3 channels
                 continue
             if (left < self.btwn_dict[node] < right) or (left < self.close_dict[node] < right):
                 # excludes nodes within this spread
+                continue
+            if self.btwn_dict[node] < min_percentile and self.close_dict[node] < min_percentile:
+                continue
+            if self.btwn_dict[node] > max_percentile and self.close_dict[node] > max_percentile:
                 continue
             capacity = sum([int(self.base_graph[node][nbrs[i]]["capacity"]) for i in range(len(nbrs))])
             if capacity < min_capacity - tolerance:
@@ -256,8 +272,10 @@ def eval_recommendation(base_graph, edge_ids, node_id):
                                         epsilon=epsilon,
                                         with_depletion=with_depletion
                                         )
-    cheapest_paths, _, all_router_fees, _ = simulator.simulate(weight="total_fee", with_node_removals=False)
-    node_stats = all_router_fees.groupby("node")["fee"].sum()[node_id]
+    cheapest_paths, _, all_router_fees, _ = simulator.simulate(weight="total_fee",
+                                                               max_threads=16,
+                                                               with_node_removals=False)
+    node_stats = all_router_fees.groupby("node")["fee"].sum().get(node_id, 0)  # return 0 if node did not make any fees
     top_5_stats = all_router_fees.groupby("node")["fee"].sum().sort_values(ascending=False).head(5)
     median = all_router_fees.groupby("node")["fee"].sum().median()
     print("Top 5 earners:")
@@ -269,6 +287,7 @@ def eval_recommendation(base_graph, edge_ids, node_id):
 
 
 def main():
+    # seed(69420)  # freeze randomness (GA only)
     node_id = "this_us"
     test_graph = "cleaned_graphs/1614938401-graph.json"
     base_graph = getGraph(getDict(test_graph))
@@ -276,15 +295,14 @@ def main():
     closeness_centralities = save_load_closeness_centralities(base_graph)
     genetic_algorithm = GeneticAlgorithm(node_id=node_id,
                                          base_graph=base_graph,
-                                         num_edges=18,
+                                         num_edges=4,
                                          popsize=100,
                                          num_generations=5000,
-                                         mrate=0.01,
+                                         mrate=0.1,
                                          btwn_dict=betweenness_centralities,
                                          close_dict=closeness_centralities
                                          )
     edge_ids = genetic_algorithm.run()
-
     print("Edge recommendations:")
     print(genetic_algorithm.best_individual)
     for edge_id in edge_ids:
