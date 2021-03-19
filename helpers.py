@@ -27,6 +27,8 @@ from lnsimulator.ln_utils import load_temp_data, generate_directed_graph
 from random import randint
 import time
 import pandas as pd
+from scipy.stats import percentileofscore
+import lnsimulator.simulator.transaction_simulator as ts
 
 configPath = "./config.yml"
 
@@ -297,7 +299,7 @@ def make_edges_from_template(node_id, nbr_ids):
             },
             "node1_pub": node_id,
             "node2_pub": nbr_id,
-        }  # TODO: Add node policies using above info
+        }
         edges.append(edge)
     return edges
 
@@ -323,9 +325,9 @@ def preprocess_json_file(json_file, additional_node, additional_edges):
     pd_add_node = pd.DataFrame([additional_node])
     pd_add_edges = pd.DataFrame(additional_edges)
     edges = pd.concat([edges, pd_add_edges])
-    nodes = pd.concat([nodes, pd_add_node])
+    # nodes = pd.concat([nodes, pd_add_node])
     edges = edges.reset_index(drop=True)
-    nodes = nodes.reset_index(drop=True)
+    # nodes = nodes.reset_index(drop=True)
     # print(len(nodes), len(edges))
 
     # print("Remove records with missing node policy")
@@ -344,3 +346,49 @@ def preprocess_json_file(json_file, additional_node, additional_edges):
     for col in ["fee_base_msat", "fee_rate_milli_msat", "min_htlc"]:
         directed_df[col] = directed_df[col].astype("float64")
     return directed_df
+
+
+def normalize_dicts(_dict):
+    # closeness_dict
+    ckeys, cvalues = list(_dict.keys()), list(_dict.values())
+    # we want to maximize closeness
+    percentiles = [(percentileofscore(cvalues, value, "rank")) / 100 for value in cvalues]
+    return dict(zip(ckeys, percentiles))
+
+
+def eval_recommendation(base_graph, edge_ids, node_id):
+    new_edges = make_edges_from_template(node_id, edge_ids)
+    new_node = make_node_from_template(node_id)
+    directed_edges = preprocess_json_file(base_graph, new_node, new_edges)
+    merchant_data = get_merchant_data()
+    merchant_keys = list(merchant_data.keys())
+
+    # SIMULATOR PARAMS
+    transaction_size = 12000
+    num_transactions = 8000  # (~.96 bitcoin rough estimate of the amount transacted per day )
+    epsilon = 0.8
+    drop_disabled = True
+    drop_low_cap = False
+    with_depletion = True
+
+    simulator = ts.TransactionSimulator(directed_edges,
+                                        merchant_keys,
+                                        transaction_size,
+                                        num_transactions,
+                                        drop_disabled=drop_disabled,
+                                        drop_low_cap=drop_low_cap,
+                                        epsilon=epsilon,
+                                        with_depletion=with_depletion
+                                        )
+    cheapest_paths, _, all_router_fees, _ = simulator.simulate(weight="total_fee",
+                                                               max_threads=16,
+                                                               with_node_removals=False)
+    node_stats = all_router_fees.groupby("node")["fee"].sum().get(node_id, 0)  # return 0 if node did not make any fees
+    top_5_stats = all_router_fees.groupby("node")["fee"].sum().sort_values(ascending=False).head(10)
+    median = all_router_fees.groupby("node")["fee"].sum().median()
+    print("Top 10 earners:")
+    print(top_5_stats)
+    print("Median")  # 50% of nodes make less than this amount per day
+    print(median)
+    print("Us:")
+    print(node_stats)

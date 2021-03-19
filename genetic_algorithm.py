@@ -2,9 +2,6 @@ from helpers import *
 from random import sample, randrange, uniform, seed
 from tqdm import tqdm
 import math
-from scipy.stats import percentileofscore
-import lnsimulator.simulator.transaction_simulator as ts
-import numpy as np
 
 
 class Individual:
@@ -18,15 +15,26 @@ class Individual:
         self.o_indices = o_indices
         self.z_indices = z_indices
         self.fitness = 0
-        self.closeness_sum = 0
-        self.betweenness_sum = 0
+        self.closeness = 0
+        self.anticloseness = 0
+        self.betweenness = 0
+        self.antibetweenness = 0
+        self.coefficients = [0, 1, 0, 1]
 
-    def set_fitness(self, closeness_sum, betweenness_sum):
-        self.closeness_sum = round(closeness_sum, 5)
-        self.betweenness_sum = round(betweenness_sum, 5)
+    def set_fitness(self, closeness, anticloseness, betweenness, antibetweenness):
+        self.closeness = closeness
+        self.anticloseness = anticloseness
+        self.betweenness = betweenness
+        self.antibetweenness = antibetweenness
+
+        factors = [self.closeness, self.anticloseness, self.betweenness, self.antibetweenness]
 
         # maximize a vectors distance from zero vector
-        self.fitness = math.sqrt(pow(closeness_sum, 2) + pow(betweenness_sum, 2))
+        self.fitness = 0
+        _sum = 0
+        for i in range(4):
+            _sum += self.coefficients[i] * pow(factors[i], 2)
+        self.fitness = round(math.sqrt(_sum), 5)
 
     def mutate(self):
         """
@@ -45,7 +53,7 @@ class Individual:
         self.z_indices.append(o_index)
 
     def __repr__(self):
-        return "{} {}".format(self.fitness, self.closeness_sum, self.betweenness_sum)
+        return "{} {} {} {}".format(self.closeness, self.anticloseness, self.betweenness, self.antibetweenness)
 
 
 class GeneticAlgorithm:
@@ -53,7 +61,6 @@ class GeneticAlgorithm:
         # Heuristic Data
         self.close_dict = close_dict
         self.btwn_dict = btwn_dict
-        self.normalize_dicts()
 
         # Search Space
         self.base_graph = base_graph
@@ -99,7 +106,10 @@ class GeneticAlgorithm:
             for _, neighbor in edges:
                 closeness_sum += self.close_dict[neighbor]
                 betweenness_sum += self.btwn_dict[neighbor]
-            individual.set_fitness(closeness_sum, betweenness_sum)
+            individual.set_fitness(closeness=closeness_sum,
+                                   betweenness=betweenness_sum,
+                                   anticloseness=self.num_edges - closeness_sum,
+                                   antibetweenness=self.num_edges - betweenness_sum)
 
     def select(self):
         new_population = []
@@ -192,6 +202,7 @@ class GeneticAlgorithm:
         min_channels = 4
         max_channels = float("inf")
         nodes = []
+        # TODO: add last_updated constraint
 
         # betweenness/closeness
         left, right = 0.60, 0.90  # defines a spread of nodes to choose from
@@ -203,87 +214,25 @@ class GeneticAlgorithm:
         for node in self.base_graph.nodes():
             nbrs = list(self.base_graph.neighbors(node))
             if min_channels > len(nbrs) or len(nbrs) > max_channels:
-                # must have more than 3 channels
+                # must have more channels than this
                 continue
             if (left < self.btwn_dict[node] < right) or (left < self.close_dict[node] < right):
                 # excludes nodes within this spread
                 continue
             if self.btwn_dict[node] < min_percentile and self.close_dict[node] < min_percentile:
+                # must have a percentile greater than this
                 continue
             if self.btwn_dict[node] > max_percentile and self.close_dict[node] > max_percentile:
+                # must have a percentile less than this
                 continue
             capacity = sum([int(self.base_graph[node][nbrs[i]]["capacity"]) for i in range(len(nbrs))])
             if capacity < min_capacity - tolerance:
-                # must have this capacity
+                # must have a capacity greater than this
                 continue
             nodes.append(node)
         print(len(nodes))
 
-        # updates the values in these dictionaries so that the fitness function still works for the bottom spread
-        # values for the bottom spread are increased by the top spread, and vice versa
-        for k, v in self.btwn_dict.items():
-            if v < left:
-                self.btwn_dict[k] = right - v
-            if v > right:
-                self.btwn_dict[k] = v - left
-        for k, v in self.close_dict.items():
-            if v < left:
-                self.close_dict[k] = right - v
-            if v > right:
-                self.close_dict[k] = v - left
         return nodes
-
-    def normalize_dicts(self):
-        # closeness_dict
-        ckeys, cvalues = list(self.close_dict.keys()), list(self.close_dict.values())
-        # we want to maximize closeness
-        percentiles = [(percentileofscore(cvalues, value, "rank")) / 100 for value in cvalues]
-        self.close_dict = dict(zip(ckeys, percentiles))
-
-        # betweeness dict
-        bkeys, bvalues = list(self.btwn_dict.keys()), list(self.btwn_dict.values())
-        # we want to maximize betweenness
-        percentiles = [(percentileofscore(bvalues, value, "rank")) / 100 for value in bvalues]
-        self.btwn_dict = dict(zip(bkeys, percentiles))
-
-
-def eval_recommendation(base_graph, edge_ids, node_id):
-    # TODO: Add edges to json before processing into directed edges
-    new_edges = make_edges_from_template(node_id, edge_ids)
-    new_node = make_node_from_template(node_id)
-    directed_edges = preprocess_json_file(base_graph, new_node, new_edges)
-    merchant_data = get_merchant_data()
-    merchant_keys = list(merchant_data.keys())
-
-    # SIMULATOR PARAMS
-    transaction_size = 12000
-    num_transactions = 8000  # (~.96 bitcoin rough estimate of the amount transacted per day )
-    epsilon = 0.8
-    drop_disabled = True
-    drop_low_cap = False
-    with_depletion = True
-
-    simulator = ts.TransactionSimulator(directed_edges,
-                                        merchant_keys,
-                                        transaction_size,
-                                        num_transactions,
-                                        drop_disabled=drop_disabled,
-                                        drop_low_cap=drop_low_cap,
-                                        epsilon=epsilon,
-                                        with_depletion=with_depletion
-                                        )
-    cheapest_paths, _, all_router_fees, _ = simulator.simulate(weight="total_fee",
-                                                               max_threads=16,
-                                                               with_node_removals=False)
-    node_stats = all_router_fees.groupby("node")["fee"].sum().get(node_id, 0)  # return 0 if node did not make any fees
-    top_5_stats = all_router_fees.groupby("node")["fee"].sum().sort_values(ascending=False).head(5)
-    median = all_router_fees.groupby("node")["fee"].sum().median()
-    print("Top 5 earners:")
-    print(top_5_stats)
-    print("Median")  # 50% of nodes make less than this amount per day
-    print(median)
-    print("Us:")
-    print(node_stats)
 
 
 def main():
@@ -291,8 +240,9 @@ def main():
     node_id = "this_us"
     test_graph = "cleaned_graphs/1614938401-graph.json"
     base_graph = getGraph(getDict(test_graph))
-    betweenness_centralities = save_load_betweenness_centralities(base_graph)
-    closeness_centralities = save_load_closeness_centralities(base_graph)
+    betweenness_centralities = normalize_dicts(save_load_betweenness_centralities(base_graph))
+    closeness_centralities = normalize_dicts(save_load_closeness_centralities(base_graph))
+
     genetic_algorithm = GeneticAlgorithm(node_id=node_id,
                                          base_graph=base_graph,
                                          num_edges=4,
