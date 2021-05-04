@@ -1,0 +1,61 @@
+
+# code used to get an idea of the template for creating psuedochannels
+# for col in directed_edges.select_dtypes([np.float64]): # bug this also removes the capacity column
+#     directed_edges = directed_edges[(np.abs(stats.zscore(directed_edges[col])) < 3)] # remove outliers
+#     print(directed_edges[col].describe()) # describe column using 5 number summary
+
+count    6.074600e+04
+mean     3.417289e+06
+std      9.731747e+06
+min      1.100000e+03
+25%      1.766230e+05
+50%      7.825770e+05
+75%      3.000000e+06
+max      5.000000e+08
+Name: capacity, dtype: float64
+Mean Capacity ~ 3,000,000
+50% of values fall between 176,623 and 3,000,000
+
+
+count     60690.000000
+mean       1320.329988
+std        5848.706414
+min           0.000000
+25%           1.000000
+50%        1000.000000
+75%        1000.000000
+max      100000.000000
+Name: fee_base_msat, dtype: float64
+Mean Base Fee ~ 1320
+50% of values fall between 1 and 1,000
+Most frequent is 1,000
+
+
+count     60592.000000
+mean        216.347010
+std        2214.805934
+min           0.000000
+25%           1.000000
+50%           1.000000
+75%          10.000000
+max      200000.000000
+Name: fee_rate_milli_msat, dtype: float64
+Mean Fee Rate ~ 216
+50% of values fall between 1 and 10
+Most frequent is 1
+
+
+
+count    60542.000000
+mean       848.530970
+std        548.527228
+min          0.000000
+25%       1000.000000
+50%       1000.000000
+75%       1000.000000
+max      10000.000000
+Name: min_htlc, dtype: float64
+Mean Min HTLC ~ 848
+>50% of values are 1000
+
+

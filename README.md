@@ -1,41 +1,31 @@
-# LN-Analysis with Python
+# Lightning Network Toolkit
 
-## Getting Started
+Tools for a lightning node. All documentation assumes running a [RaspiBlitz](https://github.com/rootzal/raspiblitz).
 
-1. `git clone https://github.com/count-null/LN-Analysis`
-2. `cd LN-Analysis`
-3. `python3 -m venv venv`
-4. `source venv/bin/activate`
-5. `pip3 install -r requirements.txt`
-6. `cp example.config.yml config.yml`
-7. Edit `config.yml` if desired
+# Getting Started 
 
-### Aquire a Network Snapshot
+1. `git clone --recurse-submodules https://github.com/count-null/LN-Analysis`
 
-You will need a snapshot of the Lightning Network graph. This project uses a special format with a timestamp.
+2. Explore the directories and README's 
 
-i.e.
+### backups
+Information to automatically backup your SCB
 
-```
-{
-  "timestamp": 1608063155,
-  "graph": <normal output of lncli describegraph>
-}
-```
+### channels
+Scripts for channel reccomendations
 
-If you are using your own dump, modify it to include the `timestamp` and `graph` entry. Otherwise, you can use `snapshot.py` to create a snapshot on your own lightning node.
+### networking
+Interactive scripts to configure tunnels/forwards/firewalls
 
-To create a snapshot locally (on the node)
-`python3 snapshot.py`
+### reference
+Code snippets, articles, etc. pulled from various sources
 
-To upload a snapshot to another host
-`python3 snapshot.py --remote-write`
+### snapshots
+Automate taking network graph snapshots and store them efficiently
 
-To archive that snapshot in your `archive` folder
-`python3 snapshot.py --archive`
+### TODO: fees
+Configurations for [charge-lnd](https://github.com/accumulator/charge-lnd)
 
-Use with [cron](https://www.howtogeek.com/101288/how-to-schedule-tasks-on-linux-an-introduction-to-crontab-files/) to get regular snapshots.
+### TODO: rebalance
+Configurations for automatic rebalancing
 
-### Do Some Analysis!
-
-In `example_script.py` we show how to load in a snapshot for analysis.
