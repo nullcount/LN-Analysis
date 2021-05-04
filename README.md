@@ -8,6 +8,9 @@ Tools for a lightning node. All documentation assumes running a [RaspiBlitz](htt
 
 2. Explore the directories and README's 
 
+### _graphs
+Put your graph snapshots in here
+
 ### backups
 Information to automatically backup your SCB
 

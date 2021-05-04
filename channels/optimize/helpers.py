@@ -58,14 +58,14 @@ def isCommand(name):
 
 def getDict(f):
     with open(f, "rb") as j:
-        return json.load(j, encoding='utf-32')
+        return (json.load(j, encoding='utf-32'), Path(f).stem)
 
 
-def getGraph(graphJson):
+def getGraph(f):
     # Create an empty graph
-
+    graphJson, name = getDict(f)
     # TODO name graph based on timestamp - from filename
-    G = nx.Graph(name='graph')
+    G = nx.Graph(name=name)
     if graphJson.get("graph", None):
         graphJson = graphJson["graph"]
     # Parse and add nodes
@@ -156,23 +156,20 @@ def mkdir(d):
 
 
 def graphSelector():
-    config = getConfig()
-    graphs = glob.glob("%s/*" % (config['json_archive']))
+    graphs = glob.glob("../../_graphs/*")
     if len(graphs) == 0:
         print(
-            "No graphs found in %s. Run snapshot.py on your lightning node or grab a snapshot from somewhere else. Exiting." %
-            config['json_archive'])
-        return
+                "No graphs found in _graphs.\n\nlncli describegraph > graph.json\n\nTip: use the scripts in snapshots/ to automate graph collection. Exiting.")
+        return False
     if len(graphs) == 1:
-        return getGraph(getDict(graphs[0]))
+        return graphs[0]
     else:
         print("Showing all archived graph json:\n")
         for i, graph in enumerate(graphs):
             file = graph.split("/")[-1].lstrip("//graphs\\")
-            date = datetime.utcfromtimestamp(int(file.split('-')[0])).strftime('%Y-%m-%d %H:%M:%S')
-            print("%s - %s from %s" % (i, file, date))
+            print("%s - %s" % (i, file))
         choice = input("\nPlease select a snapshot. Enter a number 0-%s: " % (len(graphs) - 1))
-        return getGraph(getDict(graphs[int(choice)]))
+        return graphs[int(choice)]
 
 
 def get_merchant_data():
@@ -252,10 +249,13 @@ def save_load_betweenness_centralities(base_graph: nx_Graph) -> dict:
     Path(btwn_dir).mkdir(exist_ok=True)
     filename = join(btwn_dir, "{}.pickle".format(base_graph.name))
     if os.path.isfile(filename):
+        print("Using cached betweenness centrality from " + filename)
         with open(filename, "rb") as f:
             btwn_dict = pickle.load(f)
     else:
+        print("Calculating betweenness centrality for " + base_graph.name )
         btwn_dict = dict(nx.betweenness_centrality(base_graph))
+        print("Saving result in " + filename)
         with open(filename, "wb") as f:
             pickle.dump(btwn_dict, f)
     return btwn_dict
@@ -270,10 +270,13 @@ def save_load_closeness_centralities(base_graph: nx_Graph) -> dict:
     Path(close_dir).mkdir(exist_ok=True)
     filename = join(close_dir, "{}.pickle".format(base_graph.name))
     if os.path.isfile(filename):
+        print("Using cached closeness centrality from " + filename)
         with open(filename, "rb") as f:
             close_dict = pickle.load(f)
     else:
+        print("Calculating closeness centrality for " + base_graph.name)
         close_dict = dict(nx.closeness_centrality(base_graph))
+        print("Saving result in " + filename)
         with open(filename, "wb") as f:
             pickle.dump(close_dict, f)
     return close_dict

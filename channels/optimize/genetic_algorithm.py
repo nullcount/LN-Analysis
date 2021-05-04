@@ -2,6 +2,14 @@ from helpers import *
 from random import sample, randrange, uniform, seed
 from tqdm import tqdm
 import math
+import sys
+
+# USAGE
+#
+# python3 genetic_algorithm.py <String:nodeId> <Int:numReccomendations> <String:graphFileName>
+# 
+# Arguments are optional.
+# Input will be required for missing args
 
 
 class Individual:
@@ -210,7 +218,6 @@ class GeneticAlgorithm:
         max_percentile = 1.00
         #  0% |xx|----|xxx|-| 100%
         # only dashed sections are considered 
-
         for node in self.base_graph.nodes():
             nbrs = list(self.base_graph.neighbors(node))
             if min_channels > len(nbrs) or len(nbrs) > max_channels:
@@ -235,17 +242,33 @@ class GeneticAlgorithm:
         return nodes
 
 
+def get_arguments():
+    args = []
+    get = {
+        'node_id': (len(sys.argv) >= 2, input("Enter node public key: ") ),
+        'num_edges': (len(sys.argv) >= 3, int(input("Num edges to return: "))),
+        'graph': (len(sys.argv) >= 4, graphSelector())
+    }
+    i = 1
+    for var in get:
+        if get[var][0]:
+            args.append(sys.argv[i])
+        else:
+            args.append(get[var][1])
+        i+=1
+    return args
+
 def main():
+    node_id, num_edges, graph_file = get_arguments()
+    if not graph_file:
+        return
     # seed(69420)  # freeze randomness (GA only)
-    node_id = "02a32ec469c2dce4937148ac1f6af67aa0054723b7c67a5f95a3c32f00a3caca2e"
-    test_graph = "cleaned_graphs/graph.json"
-    base_graph = getGraph(getDict(test_graph))
+    base_graph = getGraph(graph_file)
     betweenness_centralities = normalize_dicts(save_load_betweenness_centralities(base_graph))
     closeness_centralities = normalize_dicts(save_load_closeness_centralities(base_graph))
-
     genetic_algorithm = GeneticAlgorithm(node_id=node_id,
                                          base_graph=base_graph,
-                                         num_edges=4,
+                                         num_edges=num_edges,
                                          popsize=100,
                                          num_generations=5000,
                                          mrate=0.1,
@@ -257,7 +280,7 @@ def main():
     print(genetic_algorithm.best_individual)
     for edge_id in edge_ids:
         print(edge_id)
-    eval_recommendation(test_graph, edge_ids, node_id)
+    eval_recommendation(graph_file, edge_ids, node_id)
 
 
 if __name__ == '__main__':
