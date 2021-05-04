@@ -1,8 +1,9 @@
-from helpers import *
 from random import sample, randrange, uniform, seed
 from tqdm import tqdm
 import math
-import sys
+import os, sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from helpers import *
 
 # USAGE
 #
@@ -242,24 +243,13 @@ class GeneticAlgorithm:
         return nodes
 
 
-def get_arguments():
-    args = []
-    get = {
-        'node_id': (len(sys.argv) >= 2, input("Enter node public key: ") ),
-        'num_edges': (len(sys.argv) >= 3, int(input("Num edges to return: "))),
-        'graph': (len(sys.argv) >= 4, graphSelector())
-    }
-    i = 1
-    for var in get:
-        if get[var][0]:
-            args.append(sys.argv[i])
-        else:
-            args.append(get[var][1])
-        i+=1
-    return args
-
 def main():
-    node_id, num_edges, graph_file = get_arguments()
+    args = {
+        'node_id': (len(sys.argv) >= 2, lambda: input("Enter node public key: ") ),
+        'num_edges': (len(sys.argv) >= 3, lambda: int(input("Num edges to return: "))),
+        'graph': (len(sys.argv) >= 4, lambda: graphSelector())
+    }
+    node_id, num_edges, graph_file = get_arguments(args)
     if not graph_file:
         return
     # seed(69420)  # freeze randomness (GA only)

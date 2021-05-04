@@ -1,49 +1,8 @@
 import json
 import networkx as nx
-import sys
-
-filename = 'graph.json'
-
-pubkey = sys.argv[1]
-
-def getGraph(graphJson):
-    # Create an empty graph
-    G = nx.Graph(name='graph')
-
-    # Parse and add nodes
-    for node in graphJson['nodes']:
-        if node.get('last_update', 0) == 0:
-            continue
-        G.add_node(
-            node['pub_key'],
-            alias=node['alias'],
-            addresses=node['addresses'],
-            color=node['color'],
-            last_update=node['last_update']
-        )
-
-    # Parse and add edges
-    for edge in graphJson['edges']:
-        if edge['last_update'] == 0:
-            continue
-        if edge['node1_policy'] is None or edge['node2_policy'] is None:
-            continue
-        if edge['node1_policy']['disabled'] is None or edge['node2_policy']['disabled'] is None:
-            continue
-        G.add_edge(
-            edge['node1_pub'],
-            edge['node2_pub'],
-            # weight=1,
-            channel_id=edge['channel_id'],
-            chan_point=edge['chan_point'],
-            last_update=edge['last_update'],
-            capacity=edge['capacity'],
-            node1_policy=edge['node1_policy'],
-            node2_policy=edge['node2_policy']
-        )
-    G.remove_nodes_from([x for x in G.nodes() if G.degree[x] == 0])
-
-    return G
+import os, sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from helpers import *
 
 def getPeers(G, pubkey):
     peers = []
@@ -53,10 +12,15 @@ def getPeers(G, pubkey):
                 peers.append(point)
     return peers
 
-neighbors = {}
 
-with open(filename, 'r') as f:
-    graph = json.load(f)
+def main():
+    get = {
+        'pubkey': (len(sys.argv) >= 2, lambda: input("Enter node public key: "))
+    }
+    pubkey = get_arguments(get)[0]
+    print(pubkey)
+    neighbors = {}
+    graph = graphSelector()
     G = getGraph(graph)
     peers = getPeers(G, pubkey)
     for peer in peers:
@@ -78,3 +42,6 @@ with open(filename, 'r') as f:
         for p in tri['peers']:
             print(G.nodes[p]['alias'])
         print()
+
+if __name__ == '__main__':
+    main()

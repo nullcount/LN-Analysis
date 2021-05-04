@@ -11,6 +11,7 @@ import subprocess
 import yaml
 import json
 import glob
+import sys
 import os.path
 from os.path import join
 import pickle
@@ -154,6 +155,16 @@ def mkdir(d):
     """Makes a directory if it does not exist"""
     Path(d).mkdir(exist_ok=True)
 
+def get_arguments(get):
+    args = []
+    i = 1
+    for var in get:
+        if get[var][0]:
+            args.append(sys.argv[i])
+        else:
+            args.append(get[var][1]())
+        i+=1
+    return args
 
 def graphSelector():
     graphs = glob.glob("../../_graphs/*")
