@@ -11,6 +11,7 @@ import subprocess
 import yaml
 import json
 import glob
+import math
 import sys
 import os.path
 from os.path import join
@@ -42,6 +43,12 @@ def getConfig():
         return False
     with open(configPath) as f:
         return yaml.load(f, Loader=yaml.FullLoader)
+
+def millify(n):
+    n = float(n)
+    millnames = ['','K','M','B','T']
+    millidx = max(0,min(len(millnames)-1, int(math.floor(0 if n ==0 else math.log10(abs(n))/3))))
+    return '{:.0f}{}'.format(n/10**(3*millidx), millnames[millidx])
 
 
 def sh(command):

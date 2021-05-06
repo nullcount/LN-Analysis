@@ -12,6 +12,13 @@ def getPeers(G, pubkey):
                 peers.append(point)
     return peers
 
+def getAlias(G, pubkey):
+    if 'alias' in G.nodes[pubkey]:
+        return G.nodes[pubkey]['alias']
+    else:
+        return pubkey
+
+
 
 def main():
     get = {
@@ -23,6 +30,7 @@ def main():
     max_results = int(max_results)
     neighbors = {}
     G = getGraph(graph)
+    graph = getDict(graph)[0]
     peers = getPeers(G, pubkey)
     for peer in peers:
         for neighbor in getPeers(G, peer):
@@ -39,16 +47,15 @@ def main():
 
     ranked = sorted(sort, key=sort.__getitem__)
     for triangle in ranked[len(ranked)-max_results:len(ranked)]:
-        print()
         tri = neighbors[triangle]
-        print(str(len(tri['peers'])) + " triangles with:")
-        print(triangle)
+        print(str(len(tri['peers'])) + " triangles with: " + getAlias(G, triangle))
+        print('https://1ml.com/node/'+triangle)
         print()
         for p in tri['peers']:
-            if 'alias' in G.nodes[p]:
-                print(G.nodes[p]['alias'])
-            else:
-                print(p)
+            chans =  list(filter(lambda x: (x['node1_pub'] == p and x['node2_pub'] == triangle)or(x['node2_pub'] == p and x['node1_pub'] == triangle), graph['edges'])) 
+            # there could be many channels
+            for cap in chans:
+                print(getAlias(G,p).ljust(30) + millify(str(cap['capacity'])) + ' sats') 
         print()
 
 if __name__ == '__main__':
