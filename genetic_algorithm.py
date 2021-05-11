@@ -2,6 +2,8 @@ from helpers import *
 from random import sample, randrange, uniform, seed
 from tqdm import tqdm
 import math
+from heapq import nlargest
+import numpy as np
 
 
 class Individual:
@@ -19,20 +21,22 @@ class Individual:
         self.anticloseness = 0
         self.betweenness = 0
         self.antibetweenness = 0
-        self.coefficients = [0, 1, 0, 1]
+        self.path_length_sum = 0
+        self.coefficients = [0.0, 0.5, 0.0, 0.0, 0.5]  # adds up to 1, indicates which factors we value most
 
-    def set_fitness(self, closeness, anticloseness, betweenness, antibetweenness):
+    def set_fitness(self, closeness, anticloseness, betweenness, antibetweenness, path_length_sum):
+        self.path_length_sum = path_length_sum
         self.closeness = closeness
         self.anticloseness = anticloseness
         self.betweenness = betweenness
         self.antibetweenness = antibetweenness
 
-        factors = [self.closeness, self.anticloseness, self.betweenness, self.antibetweenness]
+        factors = [self.closeness, self.anticloseness, self.betweenness, self.antibetweenness, self.path_length_sum]
 
         # maximize a vectors distance from zero vector
         self.fitness = 0
         _sum = 0
-        for i in range(4):
+        for i in range(5):
             _sum += self.coefficients[i] * pow(factors[i], 2)
         self.fitness = round(math.sqrt(_sum), 5)
 
@@ -40,50 +44,69 @@ class Individual:
         """
         Pick a zero index and one index out of z_indices and o_indices respectively and swap them
         """
-        i = randrange(len(self.z_indices))
-        self.z_indices[i], self.z_indices[-1] = self.z_indices[-1], self.z_indices[i]
-        z_index = self.z_indices.pop()
+        # pick random index from each list
+        i = randrange(self.z_indices.size)
+        j = randrange(self.o_indices.size)
 
-        j = randrange(len(self.o_indices))
-        self.o_indices[j], self.o_indices[-1] = self.o_indices[-1], self.o_indices[j]
-        o_index = self.o_indices.pop()
+        # get the indices of the bitstring to swap
+        z_index = self.z_indices[i]
+        o_index = self.o_indices[j]
 
+        # swap the bits in the bit string
         self.bitstring[z_index], self.bitstring[o_index] = self.bitstring[o_index], self.bitstring[z_index]
-        self.o_indices.append(z_index)
-        self.z_indices.append(o_index)
+
+        # swap the elements between the index lists
+        self.z_indices[i], self.o_indices[j] = self.o_indices[j], self.z_indices[i]
 
     def __repr__(self):
-        return "{} {} {} {}".format(self.closeness, self.anticloseness, self.betweenness, self.antibetweenness)
+        # return "{} {} {} {}".format(self.closeness, self.anticloseness, self.betweenness, self.antibetweenness)
+        return "{}".format(self.fitness)
 
 
 class GeneticAlgorithm:
-    def __init__(self, node_id, base_graph, num_edges, popsize, num_generations, mrate, btwn_dict, close_dict):
+    def __init__(self,
+                 node_id,
+                 base_graph,
+                 num_edges,
+                 popsize,
+                 num_generations,
+                 mrate,
+                 keep_best,
+                 btwn_dict,
+                 close_dict,
+                 shortest_path_lengths,
+                 ):
         # Heuristic Data
         self.close_dict = close_dict
         self.btwn_dict = btwn_dict
+        self.short_dict = shortest_path_lengths
 
         # Search Space
         self.base_graph = base_graph
-        self.nodes = self.filter_nodes()
-        self.graph_size = len(self.nodes)
+        self.nodes = filter_nodes(self.base_graph, self.btwn_dict, self.close_dict)
         self.index_to_node = {i: node for i, node in enumerate(self.nodes)}
+        self.node_to_index = {node: i for i, node in enumerate(self.nodes)}
+        # self.cluster_dict = get_cluster_dict(base_graph, node_list=self.nodes, num_edges=num_edges)
+        self.graph_size = len(self.nodes)
 
         # GA Params
         self.num_edges = num_edges
         self.popsize = popsize
         self.num_generations = num_generations
         self.mrate = mrate
+        self.keep_best = keep_best
         self.population = []
         self.node_id = node_id
-        self.best_individual = None
+        self.best_individuals = None
+        self.minimum_length = (self.num_edges * (self.num_edges - 1)) / 2
 
     def run(self):
         self.populate()
         pbar = tqdm(range(self.num_generations))
         for i in pbar:
             self.repopulate()
-            pbar.set_postfix({"Best": self.best_individual})
-        edges = [self.index_to_node[idx] for idx in self.best_individual.o_indices]
+            pbar.set_postfix({"Best": self.best_individuals[-1]})
+        edges = [self.index_to_node[idx] for idx in self.best_individuals[-1].o_indices]
 
         return edges
 
@@ -93,49 +116,55 @@ class GeneticAlgorithm:
 
     def repopulate(self):
         self.get_fitnesses()
-        self.best_individual = self.get_best_individual()
+        self.best_individuals = self.get_best_individuals()
         self.select()
         self.mutate_all()
-        self.population.append(self.best_individual)
+        self.population.extend(self.best_individuals)
 
     def get_fitnesses(self):
         for individual in self.population:
-            edges = [(self.node_id, self.index_to_node[idx]) for idx in individual.o_indices]
+            # edges = [(self.node_id, self.index_to_node[idx]) for idx in individual.o_indices]
+            nodes = [self.index_to_node[idx] for idx in individual.o_indices]  # could probably be an apply on the array
             closeness_sum = 0
             betweenness_sum = 0
-            for _, neighbor in edges:
+            path_length_sum = 0
+            for neighbor in nodes:
                 closeness_sum += self.close_dict[neighbor]
                 betweenness_sum += self.btwn_dict[neighbor]
+            for i in range(self.num_edges):
+                u = nodes[i]
+                for j in range(i + 1, self.num_edges):
+                    path_length_sum += self.short_dict[u][nodes[j]]
+
             individual.set_fitness(closeness=closeness_sum,
                                    betweenness=betweenness_sum,
                                    anticloseness=self.num_edges - closeness_sum,
-                                   antibetweenness=self.num_edges - betweenness_sum)
+                                   antibetweenness=self.num_edges - betweenness_sum,
+                                   path_length_sum=(path_length_sum - self.minimum_length) / self.num_edges)
 
     def select(self):
         new_population = []
         self.population = sorted(self.population, key=lambda x: x.fitness)
         groups = 3
-        subpopsize = self.popsize // groups
-        remainder = self.popsize % groups
+        subpopsize = (self.popsize - self.keep_best) // groups
+        remainder = (self.popsize - self.keep_best) % groups
 
         # elitism
         new_population.extend(self.elitism(subpopsize))
         # roulette
         new_population.extend(self.roulette(subpopsize))
         # new random
-        new_population.extend(self.new_random(subpopsize + remainder - 1))
+        new_population.extend(self.new_random(subpopsize + remainder))
 
         self.population = new_population
 
     def crossover(self, x, y):
-        bitstring = [0 for i in range(self.graph_size)]
+        bitstring = np.zeros(self.graph_size, dtype=np.int)
         # join the list of one indices and sample from it
-        indices = list(set.union(set(x.o_indices), set(y.o_indices)))
-        z_indices = list(range(self.graph_size))
-        o_indices = sorted(sample(indices, self.num_edges), reverse=True)
-        for o_index in o_indices:
-            z_indices[o_index], z_indices[-1] = z_indices[-1], z_indices[o_index]
-            z_indices.pop()
+        indices = np.union1d(x.o_indices, y.o_indices)
+        z_indices = np.arange(self.graph_size, dtype=np.int)
+        o_indices = np.random.choice(indices, self.num_edges, replace=True)
+        z_indices = np.delete(z_indices, o_indices)
         for index in o_indices:
             bitstring[index] = 1
         return Individual(bitstring, o_indices, z_indices)
@@ -153,13 +182,20 @@ class GeneticAlgorithm:
         # randomly generate new offspring
         subpopulation = []
         for i in range(n):
-            bitstring = [0 for _ in range(self.graph_size)]
-            z_indices = list(range(self.graph_size))
-            o_indices = []
-            for _ in range(self.num_edges):
-                idx = randrange(len(z_indices))
-                z_indices[idx], z_indices[-1] = z_indices[-1], z_indices[idx]
-                o_indices.append(z_indices.pop())
+            bitstring = np.zeros(self.graph_size, dtype=np.int)
+            z_indices = np.arange(self.graph_size, dtype=np.int)
+            # o_indices = np.array([], dtype=np.int)
+            # indices = np.array([], dtype=np.int)
+            # for cluster_num in range(self.num_edges):
+            #     node = sample(self.cluster_dict[cluster_num], 1)[0]
+            #     idx = self.node_to_index[node]
+            #     o_indices = np.append(o_indices, z_indices[idx])
+            #     indices = np.append(indices, idx)
+            # z_indices = np.delete(z_indices, indices)
+            nodes = sample(self.nodes, self.num_edges)
+            o_indices = np.array([self.node_to_index[node] for node in nodes])
+            z_indices = np.delete(z_indices, o_indices)
+
             for index in o_indices:
                 bitstring[index] = 1
             subpopulation.append(Individual(bitstring, o_indices, z_indices))
@@ -187,74 +223,35 @@ class GeneticAlgorithm:
             if chance >= self.mrate:
                 individual.mutate()
 
-    def get_best_individual(self):
-        return max(self.population, key=lambda x: x.fitness)
-
-    def filter_nodes(self):
-        # returns a list of nodes after constraints
-        # possible constraints: capacity, whether we are already connected to them
-
-        # capacity
-        min_capacity = 2 * 10 ** 6
-        tolerance = 1
-
-        # channels
-        min_channels = 4
-        max_channels = float("inf")
-        nodes = []
-        # TODO: add last_updated constraint
-
-        # betweenness/closeness
-        left, right = 0.60, 0.90  # defines a spread of nodes to choose from
-        min_percentile = 0.20
-        max_percentile = 1.00
-        #  0% |xx|----|xxx|-| 100%
-        # only dashed sections are considered 
-
-        for node in self.base_graph.nodes():
-            nbrs = list(self.base_graph.neighbors(node))
-            if min_channels > len(nbrs) or len(nbrs) > max_channels:
-                # must have more channels than this
-                continue
-            if (left < self.btwn_dict[node] < right) or (left < self.close_dict[node] < right):
-                # excludes nodes within this spread
-                continue
-            if self.btwn_dict[node] < min_percentile and self.close_dict[node] < min_percentile:
-                # must have a percentile greater than this
-                continue
-            if self.btwn_dict[node] > max_percentile and self.close_dict[node] > max_percentile:
-                # must have a percentile less than this
-                continue
-            capacity = sum([int(self.base_graph[node][nbrs[i]]["capacity"]) for i in range(len(nbrs))])
-            if capacity < min_capacity - tolerance:
-                # must have a capacity greater than this
-                continue
-            nodes.append(node)
-        print(len(nodes))
-
-        return nodes
+    def get_best_individuals(self):
+        return nlargest(self.keep_best, self.population, key=lambda x: x.fitness)
 
 
 def main():
     # seed(69420)  # freeze randomness (GA only)
     node_id = "this_us"
-    test_graph = "cleaned_graphs/1614938401-graph.json"
+    test_graph = "cleaned_graphs/1616346695-graph.json"
+    num_edges = 5
+
     base_graph = getGraph(getDict(test_graph))
     betweenness_centralities = normalize_dicts(save_load_betweenness_centralities(base_graph))
     closeness_centralities = normalize_dicts(save_load_closeness_centralities(base_graph))
+    shortest_path_lengths = save_load_shortest_path_lengths(base_graph)
 
     genetic_algorithm = GeneticAlgorithm(node_id=node_id,
                                          base_graph=base_graph,
-                                         num_edges=4,
-                                         popsize=100,
-                                         num_generations=5000,
+                                         num_edges=num_edges,
+                                         popsize=10,
+                                         num_generations=50000,
                                          mrate=0.1,
+                                         keep_best=1,
+                                         shortest_path_lengths=shortest_path_lengths,
                                          btwn_dict=betweenness_centralities,
-                                         close_dict=closeness_centralities
+                                         close_dict=closeness_centralities,
                                          )
     edge_ids = genetic_algorithm.run()
     print("Edge recommendations:")
-    print(genetic_algorithm.best_individual)
+    print(genetic_algorithm.best_individuals[-1])
     for edge_id in edge_ids:
         print(edge_id)
     eval_recommendation(test_graph, edge_ids, node_id)
@@ -263,7 +260,6 @@ def main():
 if __name__ == '__main__':
     main()
 
-# TODO: evaluate recommendations using LN simulator
 # TODO: add parameter to keep x number of best individuals
 # TODO: transition to numpy arrays for larger populations
 """

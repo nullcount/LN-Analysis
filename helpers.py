@@ -29,6 +29,7 @@ import time
 import pandas as pd
 from scipy.stats import percentileofscore
 import lnsimulator.simulator.transaction_simulator as ts
+from sklearn.cluster import SpectralClustering, AgglomerativeClustering
 
 configPath = "./config.yml"
 
@@ -65,8 +66,11 @@ def getGraph(graphJson):
     # Create an empty graph
     G = nx.Graph(name=graphJson["timestamp"])
 
+    if graphJson.get("graph", None):
+        graphJson = graphJson["graph"]
+
     # Parse and add nodes
-    for node in graphJson['graph']['nodes']:
+    for node in graphJson['nodes']:
         if node.get('last_update', 0) == 0:
             continue
         G.add_node(
@@ -78,7 +82,7 @@ def getGraph(graphJson):
         )
 
     # Parse and add edges
-    for edge in graphJson['graph']['edges']:
+    for edge in graphJson['edges']:
         if edge['last_update'] == 0:
             continue
         if edge['node1_policy'] is None or edge['node2_policy'] is None:
@@ -88,7 +92,7 @@ def getGraph(graphJson):
         G.add_edge(
             edge['node1_pub'],
             edge['node2_pub'],
-            # weight=1,
+            # weight=int(edge['node1_policy']['fee_base_msat']),
             channel_id=edge['channel_id'],
             chan_point=edge['chan_point'],
             last_update=edge['last_update'],
@@ -240,10 +244,62 @@ def convert_data(merchant_data: list) -> dict:
     return merchant_dict
 
 
+def filter_nodes(base_graph, btwn_dict, close_dict):
+    # returns a list of nodes after constraints
+    # TODO: add filter for whether our node is already connected to them
+
+    # capacity
+    min_capacity = 1 * 10 ** 6
+    tolerance = 1
+
+    # last updated
+    snapshot_timestamp = int(base_graph.name)
+    time_frame = 10 * 30 * 24 * 60 * 60  # two months
+
+    # channels
+    min_channels = 4
+    max_channels = float("inf")
+    nodes = []
+
+    # betweenness/closeness
+    # left, right = 0.10, 0.90  # defines a spread of nodes to choose from
+    min_percentile = 0.00
+    max_percentile = 0.50
+    #  0% |xx|---|-xxx|-| 100%
+    # only dashed sections are considered
+
+    for node in base_graph.nodes():
+        last_updated = base_graph.nodes()[node].get("last_update", 0)
+        if snapshot_timestamp - last_updated > time_frame:
+            # must have been updated within this time frame
+            continue
+        nbrs = list(base_graph.neighbors(node))
+        if min_channels > len(nbrs) or len(nbrs) > max_channels:
+            # must have more channels than this
+            continue
+        # if (left < btwn_dict[node] < right) and (left < close_dict[node] < right):
+        #     # excludes nodes within this spread
+        #     continue
+        # if btwn_dict[node] < min_percentile and close_dict[node] < min_percentile:
+            # if self.close_dict[node] < min_percentile:
+        #   #     must have a percentile greater than this
+            # continue
+        # if btwn_dict[node] > max_percentile and close_dict[node] > max_percentile:
+        #     # must have a percentile less than this
+        #     continue
+        capacity = min([int(base_graph[node][nbrs[i]]["capacity"]) for i in range(len(nbrs))])
+        if capacity < min_capacity - tolerance:
+            # must have a capacity greater than this
+            continue
+        nodes.append(node)
+    print(len(nodes))
+    return nodes
+
+
 def save_load_betweenness_centralities(base_graph: nx_Graph) -> dict:
     """
     If there exists a file titled ./btwn/<timestamp>.pickle, load and return it
-    else, find all shortest path lengths for a given graph, save and return the information
+    else, find all betweenness centralities for a given graph, save and return the information
     """
     btwn_dir = "btwn"
     Path(btwn_dir).mkdir(exist_ok=True)
@@ -261,7 +317,7 @@ def save_load_betweenness_centralities(base_graph: nx_Graph) -> dict:
 def save_load_closeness_centralities(base_graph: nx_Graph) -> dict:
     """
     If there exists a file titled ./close/<timestamp>.pickle, load and return it
-    else, find all shortest path lengths for a given graph, save and return the information
+    else, find all closeness centralities of a given graph, save and return the information
     """
     close_dir = "close"
     Path(close_dir).mkdir(exist_ok=True)
@@ -274,6 +330,24 @@ def save_load_closeness_centralities(base_graph: nx_Graph) -> dict:
         with open(filename, "wb") as f:
             pickle.dump(close_dict, f)
     return close_dict
+
+
+def save_load_shortest_path_lengths(base_graph: nx_Graph) -> dict:
+    """
+    If there exists a file titled ./short/<timestamp>.pickle, load and return it
+    else, find all shortest path lengths for a given graph, save and return the information
+    """
+    close_dir = "short"
+    Path(close_dir).mkdir(exist_ok=True)
+    filename = join(close_dir, "{}.pickle".format(base_graph.name))
+    if os.path.isfile(filename):
+        with open(filename, "rb") as f:
+            length_dict = pickle.load(f)
+    else:
+        length_dict = dict(nx.all_pairs_shortest_path_length(base_graph))
+        with open(filename, "wb") as f:
+            pickle.dump(length_dict, f)
+    return length_dict
 
 
 def make_edges_from_template(node_id, nbr_ids):
@@ -356,6 +430,31 @@ def normalize_dicts(_dict):
     return dict(zip(ckeys, percentiles))
 
 
+def get_cluster_dict(G, node_list, num_edges):
+    '''Matrix creation'''
+    # Converts graph to an adj matrix with adj_matrix[i][j] represents weight between node i,j.
+    adj_matrix = nx.to_numpy_matrix(G)
+    # returns a list of nodes with index mapping with the a
+
+    '''Spectral Clustering'''
+    clusters = SpectralClustering(affinity='nearest_neighbors', assign_labels="discretize", random_state=0,
+                                  n_clusters=num_edges).fit_predict(adj_matrix)
+
+    '''Agglomerative Clustering'''
+    # this method will be really good when we consider fees
+    # clusters = AgglomerativeClustering(n_clusters=num_edges).fit_predict(adj_matrix)
+
+    print(clusters.tolist())
+    node_to_label = dict(zip(node_list, clusters.tolist(), ))
+
+    cluster_dict = {}
+    for i in range(num_edges):
+        nodes = [node for node in node_list if node_to_label[node] == i]
+        cluster_dict[i] = nodes
+
+    return cluster_dict
+
+
 def eval_recommendation(base_graph, edge_ids, node_id):
     new_edges = make_edges_from_template(node_id, edge_ids)
     new_node = make_node_from_template(node_id)
@@ -386,9 +485,12 @@ def eval_recommendation(base_graph, edge_ids, node_id):
     node_stats = all_router_fees.groupby("node")["fee"].sum().get(node_id, 0)  # return 0 if node did not make any fees
     top_5_stats = all_router_fees.groupby("node")["fee"].sum().sort_values(ascending=False).head(10)
     median = all_router_fees.groupby("node")["fee"].sum().median()
-    print("Top 10 earners:")
-    print(top_5_stats)
-    print("Median")  # 50% of nodes make less than this amount per day
-    print(median)
-    print("Us:")
-    print(node_stats)
+    # print("Top 10 earners:")
+    # print(top_5_stats)
+    # print("Median")  # 50% of nodes make less than this amount per day
+    # print(median)
+    # print("Us:")
+    print("Sats per day: {}".format(node_stats))
+    print()
+
+    # TODO: see whats the highest we can raise our fees
